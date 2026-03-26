@@ -1,0 +1,200 @@
+@file:Suppress("UnusedImport", "UnusedImport", "UnusedImport", "UnusedImport", "UnusedImport",
+    "UnusedImport", "UnusedImport", "UnusedImport"
+)
+
+package com.saurabh.sonicaudiorecorder.data
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.os.Build
+import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Suppress("SameParameterValue", "SameParameterValue", "SameParameterValue", "SameParameterValue",
+    "SameParameterValue", "PrivatePropertyName", "PrivatePropertyName", "PrivatePropertyName",
+    "PrivatePropertyName", "PrivatePropertyName"
+)
+@Singleton
+class AudioRecorder @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    private var mediaRecorder: MediaRecorder? = null
+    private var audioRecord: AudioRecord? = null
+    private var recordingJob: Job? = null
+    private var isRecording = false
+    
+    private var lastAmplitude = 0f
+
+    private val SAMPLE_RATE = 44100
+    private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+    private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+    private val BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+
+    fun start(outputFile: File, format: String = "WAV") {
+        if (isRecording) return
+        isRecording = true
+        
+        if (format == "WAV") {
+            startWavRecording(outputFile)
+        } else {
+            startAacRecording(outputFile)
+        }
+    }
+
+    private fun startAacRecording(outputFile: File) {
+        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(context)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }).apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setAudioSamplingRate(SAMPLE_RATE)
+            setAudioEncodingBitRate(128000)
+            setOutputFile(outputFile.absolutePath)
+            prepare()
+            start()
+        }
+    }
+
+    @Suppress("ReplaceJavaStaticMethodWithKotlinAnalog")
+    @SuppressLint("MissingPermission")
+    private fun startWavRecording(outputFile: File) {
+        audioRecord = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            SAMPLE_RATE,
+            CHANNEL_CONFIG,
+            AUDIO_FORMAT,
+            BUFFER_SIZE
+        )
+
+        recordingJob = CoroutineScope(Dispatchers.IO).launch {
+            val data = ByteArray(BUFFER_SIZE)
+            try {
+                outputFile.createNewFile()
+                val fos = FileOutputStream(outputFile)
+                
+                writeWavHeader(fos, CHANNEL_CONFIG, SAMPLE_RATE, AUDIO_FORMAT, 0)
+                
+                audioRecord?.startRecording()
+                var totalAudioLen: Long = 0
+
+                while (isRecording) {
+                    val read = audioRecord?.read(data, 0, BUFFER_SIZE) ?: 0
+                    if (read > 0) {
+                        fos.write(data, 0, read)
+                        totalAudioLen += read
+                        
+                        // Amplitude calc
+                        var sum = 0.0
+                        for (i in 0 until read step 2) {
+                            val sample = ByteBuffer.wrap(data, i, 2).order(ByteOrder.LITTLE_ENDIAN).short.toDouble()
+                            sum += sample * sample
+                        }
+                        lastAmplitude = Math.sqrt(sum / (read / 2)).toFloat()
+                    }
+                }
+                
+                fos.close()
+                updateWavHeader(outputFile)
+            } catch (e: Exception) {
+                Log.e("AudioRecorder", "WAV recording failed", e)
+            }
+        }
+    }
+
+    fun stop() {
+        isRecording = false
+        recordingJob?.cancel()
+        
+        mediaRecorder?.apply {
+            try { stop() } catch(e: Exception) {}
+            release()
+        }
+        mediaRecorder = null
+
+        audioRecord?.apply {
+            try { stop() } catch(e: Exception) {}
+            release()
+        }
+        audioRecord = null
+    }
+
+    fun getAmplitude(): Float {
+        return if (mediaRecorder != null) {
+            mediaRecorder?.maxAmplitude?.toFloat() ?: 0f
+        } else {
+            lastAmplitude
+        }
+    }
+
+    @SuppressLint("ObsoleteSdkInt")
+    fun pause() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            mediaRecorder?.pause()
+        }
+    }
+
+    @SuppressLint("ObsoleteSdkInt")
+    fun resume() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            mediaRecorder?.resume()
+        }
+    }
+
+    private fun writeWavHeader(out: FileOutputStream, channelConfig: Int, sampleRate: Int, audioFormat: Int, dataLength: Long) {
+        val channels = if (channelConfig == AudioFormat.CHANNEL_IN_MONO) 1 else 2
+        val bitRate = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) 16 else 8
+        val byteRate = (sampleRate * channels * bitRate / 8).toLong()
+        val header = ByteArray(44)
+        val totalDataLen = dataLength + 36
+
+        header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
+        header[4] = (totalDataLen and 0xff).toByte(); header[5] = (totalDataLen shr 8 and 0xff).toByte()
+        header[6] = (totalDataLen shr 16 and 0xff).toByte(); header[7] = (totalDataLen shr 24 and 0xff).toByte()
+        header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
+        header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0 
+        header[20] = 1; header[21] = 0 
+        header[22] = channels.toByte(); header[23] = 0
+        header[24] = (sampleRate and 0xff).toByte(); header[25] = (sampleRate shr 8 and 0xff).toByte()
+        header[26] = (sampleRate shr 16 and 0xff).toByte(); header[27] = (sampleRate shr 24 and 0xff).toByte()
+        header[28] = (byteRate and 0xff).toByte(); header[29] = (byteRate shr 8 and 0xff).toByte()
+        header[30] = (byteRate shr 16 and 0xff).toByte(); header[31] = (byteRate shr 24 and 0xff).toByte()
+        header[32] = (channels * bitRate / 8).toByte(); header[33] = 0 
+        header[34] = bitRate.toByte(); header[35] = 0 
+        header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
+        header[40] = (dataLength and 0xff).toByte(); header[41] = (dataLength shr 8 and 0xff).toByte()
+        header[42] = (dataLength shr 16 and 0xff).toByte(); header[43] = (dataLength shr 24 and 0xff).toByte()
+        out.write(header, 0, 44)
+    }
+
+    private fun updateWavHeader(file: File) {
+        val raf = RandomAccessFile(file, "rw")
+        val totalDataLen = file.length() - 8
+        val audioDataLen = file.length() - 44
+        
+        raf.seek(4)
+        raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(totalDataLen.toInt()).array())
+        raf.seek(40)
+        raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(audioDataLen.toInt()).array())
+        raf.close()
+    }
+}
