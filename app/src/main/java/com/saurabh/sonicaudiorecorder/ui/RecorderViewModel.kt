@@ -12,7 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.saurabh.sonicaudiorecorder.data.AudioPlayer
 import com.saurabh.sonicaudiorecorder.data.AudioRecorder
 import com.saurabh.sonicaudiorecorder.data.SettingsRepository
-import com.saurabh.sonicaudiorecorder.data.local.RecordingDao
+import com.example.audiorecorder01.data.local.RecordingDao
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import com.saurabh.sonicaudiorecorder.service.RecordingService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,10 +30,8 @@ class RecorderViewModel @Inject constructor(
     private val audioPlayer: AudioPlayer,
     private val settingsRepository: SettingsRepository,
     private val recorder: AudioRecorder,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
-
-    private val TAG = "RecorderViewModel"
 
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording
@@ -286,5 +284,9 @@ class RecorderViewModel @Inject constructor(
         super.onCleared()
         audioPlayer.release()
         stopTimer()
+    }
+
+    companion object {
+        private const val TAG = "RecorderViewModel"
     }
 }

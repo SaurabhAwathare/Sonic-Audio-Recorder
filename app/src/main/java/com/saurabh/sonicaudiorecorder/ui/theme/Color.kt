@@ -1,4 +1,4 @@
-@file:Suppress("unused", "unused", "unused", "unused")
+@file:Suppress("unused", "unused", "RedundantSuppression", "RedundantSuppression")
 
 package com.saurabh.sonicaudiorecorder.ui.theme
 

@@ -3,7 +3,7 @@ package com.saurabh.sonicaudiorecorder.di
 import android.content.Context
 import androidx.room.Room
 import com.saurabh.sonicaudiorecorder.data.local.AppDatabase
-import com.saurabh.sonicaudiorecorder.data.local.RecordingDao
+import com.example.audiorecorder01.data.local.RecordingDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

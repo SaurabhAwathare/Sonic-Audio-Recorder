@@ -1,22 +1,65 @@
 package com.saurabh.sonicaudiorecorder.ui
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +80,8 @@ import androidx.compose.ui.unit.sp
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import com.saurabh.sonicaudiorecorder.ui.theme.AudioRecorder01Theme
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 private val SonicPurple = Color(0xFF7F00FF)
@@ -109,7 +153,7 @@ fun RecorderScreenContent(
             
             VisualizerSection()
             
-            TimerText(durationMs = 0L)
+            TimerText(durationMs = playbackPosition)
             
             Spacer(modifier = Modifier.height(64.dp))
             
@@ -154,8 +198,6 @@ fun RecorderScreenContent(
     recordingToDelete?.let { recording ->
         AlertDialog(
             onDismissRequest = {
-                @Suppress("AssignedValueIsNeverRead")
-                recordingToDelete = null
             },
             title = { Text("Delete Recording") },
             text = { Text("Are you sure you want to delete '${recording.fileName}'?") },
@@ -163,7 +205,6 @@ fun RecorderScreenContent(
                 TextButton(
                     onClick = {
                         onDeleteRecording(recording)
-                        recordingToDelete = null
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
@@ -171,7 +212,7 @@ fun RecorderScreenContent(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { recordingToDelete = null }) {
+                TextButton(onClick = { }) {
                     Text("Cancel")
                 }
             }
@@ -181,7 +222,7 @@ fun RecorderScreenContent(
     recordingToRename?.let { recording ->
         var newName by remember { mutableStateOf(recording.fileName.substringBeforeLast(".")) }
         AlertDialog(
-            onDismissRequest = { recordingToRename = null },
+            onDismissRequest = { },
             title = { Text("Rename Recording") },
             text = {
                 OutlinedTextField(
@@ -197,7 +238,6 @@ fun RecorderScreenContent(
                     onClick = {
                         if (newName.isNotBlank()) {
                             onRenameRecording(recording, newName)
-                            recordingToRename = null
                         }
                     }
                 ) {
@@ -205,7 +245,7 @@ fun RecorderScreenContent(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { recordingToRename = null }) {
+                TextButton(onClick = { }) {
                     Text("Cancel")
                 }
             }

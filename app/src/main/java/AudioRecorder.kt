@@ -1,5 +1,6 @@
-@file:Suppress("SpellCheckingInspection", "SpellCheckingInspection", "SpellCheckingInspection",
-    "SpellCheckingInspection"
+@file:Suppress(
+    "SpellCheckingInspection",
+    "SpellCheckingInspection", "RedundantSuppression", "RedundantSuppression"
 )
 /*
 package com.saurabh.sonicaudiorecorder.data

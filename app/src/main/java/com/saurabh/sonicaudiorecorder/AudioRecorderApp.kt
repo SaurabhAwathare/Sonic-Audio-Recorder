@@ -37,7 +37,7 @@ class AudioRecorderApp : Application() {
                         .build()
                 )
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Fallback if BuildConfig is not yet available
         }
     }

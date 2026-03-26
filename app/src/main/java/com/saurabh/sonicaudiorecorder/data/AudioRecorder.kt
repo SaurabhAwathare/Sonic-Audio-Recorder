@@ -1,7 +1,3 @@
-@file:Suppress("UnusedImport", "UnusedImport", "UnusedImport", "UnusedImport", "UnusedImport",
-    "UnusedImport", "UnusedImport", "UnusedImport"
-)
-
 package com.saurabh.sonicaudiorecorder.data
 
 import android.annotation.SuppressLint
@@ -15,7 +11,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -25,13 +20,9 @@ import java.nio.ByteOrder
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@Suppress("SameParameterValue", "SameParameterValue", "SameParameterValue", "SameParameterValue",
-    "SameParameterValue", "PrivatePropertyName", "PrivatePropertyName", "PrivatePropertyName",
-    "PrivatePropertyName", "PrivatePropertyName"
-)
 @Singleton
 class AudioRecorder @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private var mediaRecorder: MediaRecorder? = null
     private var audioRecord: AudioRecord? = null
@@ -40,10 +31,10 @@ class AudioRecorder @Inject constructor(
     
     private var lastAmplitude = 0f
 
-    private val SAMPLE_RATE = 44100
-    private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
-    private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-    private val BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+    private val sampleRate = 44100
+    private val channelConfig = AudioFormat.CHANNEL_IN_MONO
+    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+    private val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
     fun start(outputFile: File, format: String = "WAV") {
         if (isRecording) return
@@ -66,7 +57,7 @@ class AudioRecorder @Inject constructor(
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioSamplingRate(SAMPLE_RATE)
+            setAudioSamplingRate(sampleRate)
             setAudioEncodingBitRate(128000)
             setOutputFile(outputFile.absolutePath)
             prepare()
@@ -79,25 +70,25 @@ class AudioRecorder @Inject constructor(
     private fun startWavRecording(outputFile: File) {
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            BUFFER_SIZE
+            sampleRate,
+            channelConfig,
+            audioFormat,
+            bufferSize
         )
 
         recordingJob = CoroutineScope(Dispatchers.IO).launch {
-            val data = ByteArray(BUFFER_SIZE)
+            val data = ByteArray(bufferSize)
             try {
                 outputFile.createNewFile()
                 val fos = FileOutputStream(outputFile)
                 
-                writeWavHeader(fos, CHANNEL_CONFIG, SAMPLE_RATE, AUDIO_FORMAT, 0)
+                writeWavHeader(fos)
                 
                 audioRecord?.startRecording()
                 var totalAudioLen: Long = 0
 
                 while (isRecording) {
-                    val read = audioRecord?.read(data, 0, BUFFER_SIZE) ?: 0
+                    val read = audioRecord?.read(data, 0, bufferSize) ?: 0
                     if (read > 0) {
                         fos.write(data, 0, read)
                         totalAudioLen += read
@@ -125,13 +116,13 @@ class AudioRecorder @Inject constructor(
         recordingJob?.cancel()
         
         mediaRecorder?.apply {
-            try { stop() } catch(e: Exception) {}
+            try { stop() } catch(_: Exception) {}
             release()
         }
         mediaRecorder = null
 
         audioRecord?.apply {
-            try { stop() } catch(e: Exception) {}
+            try { stop() } catch(_: Exception) {}
             release()
         }
         audioRecord = null
@@ -159,16 +150,17 @@ class AudioRecorder @Inject constructor(
         }
     }
 
-    private fun writeWavHeader(out: FileOutputStream, channelConfig: Int, sampleRate: Int, audioFormat: Int, dataLength: Long) {
+    private fun writeWavHeader(out: FileOutputStream) {
         val channels = if (channelConfig == AudioFormat.CHANNEL_IN_MONO) 1 else 2
         val bitRate = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) 16 else 8
         val byteRate = (sampleRate * channels * bitRate / 8).toLong()
         val header = ByteArray(44)
+        val dataLength = 0L // Header is initially written with 0 length
         val totalDataLen = dataLength + 36
 
         header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
-        header[4] = (totalDataLen and 0xff).toByte(); header[5] = (totalDataLen shr 8 and 0xff).toByte()
-        header[6] = (totalDataLen shr 16 and 0xff).toByte(); header[7] = (totalDataLen shr 24 and 0xff).toByte()
+        header[4] = (totalDataLen and 0xff).toByte(); header[5] = (0 and 0xff).toByte()
+        header[6] = (0 and 0xff).toByte(); header[7] = (0 and 0xff).toByte()
         header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
         header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
         header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0 
@@ -181,8 +173,8 @@ class AudioRecorder @Inject constructor(
         header[32] = (channels * bitRate / 8).toByte(); header[33] = 0 
         header[34] = bitRate.toByte(); header[35] = 0 
         header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
-        header[40] = (dataLength and 0xff).toByte(); header[41] = (dataLength shr 8 and 0xff).toByte()
-        header[42] = (dataLength shr 16 and 0xff).toByte(); header[43] = (dataLength shr 24 and 0xff).toByte()
+        header[40] = (0).toByte(); header[41] = (0 and 0xff).toByte()
+        header[42] = (0 and 0xff).toByte(); header[43] = (0 and 0xff).toByte()
         out.write(header, 0, 44)
     }
 

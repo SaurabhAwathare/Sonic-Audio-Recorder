@@ -12,9 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.saurabh.sonicaudiorecorder.MainActivity
-import com.saurabh.sonicaudiorecorder.R
 import com.saurabh.sonicaudiorecorder.data.AudioRecorder
-import com.saurabh.sonicaudiorecorder.data.local.RecordingDao
+import com.example.audiorecorder01.data.local.RecordingDao
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope

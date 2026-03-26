@@ -1,6 +1,7 @@
-package com.saurabh.sonicaudiorecorder.data.local
+package com.example.audiorecorder01.data.local
 
 import androidx.room.*
+import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao

@@ -1,7 +1,3 @@
-@file:Suppress("AddExplicitTargetToParameterAnnotation", "AddExplicitTargetToParameterAnnotation",
-    "AddExplicitTargetToParameterAnnotation", "AddExplicitTargetToParameterAnnotation"
-)
-
 package com.saurabh.sonicaudiorecorder.data
 
 import android.content.Context
@@ -19,7 +15,7 @@ import javax.inject.Singleton
 
 @Singleton
 class AudioPlayer @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private var exoPlayer: ExoPlayer? = null
 
