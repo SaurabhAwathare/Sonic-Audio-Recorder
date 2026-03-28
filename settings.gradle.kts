@@ -1,4 +1,4 @@
-@file:Suppress("UnstableApiUsage", "UnstableApiUsage")
+@file:Suppress("UnstableApiUsage")
 
 pluginManagement {
     repositories {

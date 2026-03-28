@@ -1,12 +1,13 @@
 package com.saurabh.sonicaudiorecorder.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,31 +22,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,14 +55,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
+import androidx.compose.ui.unit.sp
 import com.saurabh.sonicaudiorecorder.ui.components.WaveformVisualizer
-import com.saurabh.sonicaudiorecorder.ui.theme.AccentRed
+import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
+import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -81,174 +80,223 @@ fun RecordingScreen(
     val isRecording by viewModel.isRecording.collectAsState()
     val isPaused by viewModel.isPaused.collectAsState()
     val elapsedTime by viewModel.elapsedTime.collectAsState()
-    val amplitude by viewModel.amplitude.collectAsState()
+    val amplitudeHistory by viewModel.amplitudeHistory.collectAsState()
     val lastRecording by viewModel.lastRecording.collectAsState()
 
-    var showExitConfirmation by remember { mutableStateOf(false) }
+    var showPostRecordingSheet by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    
+    val sheetState = rememberModalBottomSheetState()
 
+    // Start recording automatically
     LaunchedEffect(Unit) {
         if (!isRecording) {
             viewModel.startRecording()
         }
     }
 
-    BackHandler(enabled = isRecording) {
-        showExitConfirmation = true
+    BackHandler {
+        if (isRecording) {
+            viewModel.stopRecording()
+        }
+        onBack()
+    }
+
+    // Show bottom sheet once recording is saved
+    LaunchedEffect(lastRecording) {
+        if (lastRecording != null && !showRenameDialog) {
+            showPostRecordingSheet = true
+        }
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
-                        "Recording", 
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ) 
+                        "Sound Recorder",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { if (isRecording) showExitConfirmation = true else onBack() }) {
-                        Icon(
-                            Icons.Default.Close, 
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    IconButton(onClick = { 
+                        if (isRecording) viewModel.stopRecording()
+                        onBack()
+                    }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
+                actions = { Spacer(modifier = Modifier.width(48.dp)) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
+            modifier = Modifier.padding(padding).fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceEvenly
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Waveform Section
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 40.dp)
             ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    WaveformVisualizer(
-                        amplitude = amplitude,
-                        isRecording = isRecording && !isPaused,
-                        modifier = Modifier.padding(horizontal = 24.dp)
-                    )
-                }
+                TimerDisplay(elapsedTimeMs = elapsedTime)
+                Text(
+                    text = if (isPaused) "Paused" else "Recording...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = (if (isPaused) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f) else SonicPurple)
+                )
             }
 
-            // Timer Section
-            TimerDisplay(elapsedTimeMs = elapsedTime)
+            Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                WaveformVisualizer(amplitudes = amplitudeHistory)
+            }
 
-            // Controls Section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Pause/Resume
-                if (isRecording) {
-                    IconButton(
-                        onClick = {
-                            if (isPaused) viewModel.resumeRecording() else viewModel.pauseRecording()
-                        },
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                            contentDescription = if (isPaused) "Resume" else "Pause",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(48.dp))
-                }
-
-                // Main Record/Stop Button
-                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                val pulseScale by infiniteTransition.animateFloat(
-                    initialValue = 1f,
-                    targetValue = if (isRecording && !isPaused) 1.15f else 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1000, easing = LinearOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "scale"
-                )
-
-                Surface(
-                    modifier = Modifier
-                        .size(88.dp)
-                        .graphicsLayer {
-                            scaleX = pulseScale
-                            scaleY = pulseScale
+            Box(modifier = Modifier.fillMaxWidth().padding(bottom = 80.dp), contentAlignment = Alignment.Center) {
+                AnimatedContent(
+                    targetState = isRecording,
+                    transitionSpec = {
+                        if (targetState) {
+                            (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
+                        } else {
+                            (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
+                        }.using(SizeTransform(clip = false))
+                    },
+                    label = "ControlTransition"
+                ) { recordingActive ->
+                    if (!recordingActive && !showPostRecordingSheet) {
+                        RecordButton(onClick = { viewModel.startRecording() })
+                    } else if (recordingActive) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                            ControlCircle(
+                                icon = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                onClick = { if (isPaused) viewModel.resumeRecording() else viewModel.pauseRecording() },
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
+                                iconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            ControlCircle(
+                                icon = Icons.Default.Stop,
+                                onClick = { viewModel.stopRecording() },
+                                backgroundColor = SonicPurple,
+                                iconColor = Color.White,
+                                size = 80.dp,
+                                iconSize = 36.dp
+                            )
                         }
-                        .clip(CircleShape)
-                        .clickable {
-                            if (isRecording) viewModel.stopRecording() else viewModel.startRecording()
-                        },
-                    color = if (isRecording) AccentRed else MaterialTheme.colorScheme.primary,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 12.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = if (isRecording) "Stop" else "Record",
-                            tint = Color.White,
-                            modifier = Modifier.size(42.dp)
-                        )
                     }
                 }
             }
         }
     }
 
-    if (showExitConfirmation) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Stop recording?") },
-            text = { Text("Do you want to stop and save your current recording?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.stopRecording()
-                    }
-                ) {
-                    Text("Stop & Save")
-                }
+    if (showPostRecordingSheet && lastRecording != null) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showPostRecordingSheet = false
+                viewModel.resetLastRecording()
+                onBack()
             },
-            dismissButton = {
-                TextButton(onClick = { }) {
-                    Text("Cancel")
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            dragHandle = { Box(Modifier.padding(vertical = 12.dp).width(32.dp).height(4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), CircleShape)) }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(56.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Recording saved", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface))
+                Text(lastRecording!!.fileName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                Spacer(modifier = Modifier.height(32.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    PostRecordingAction(Icons.Default.Share, "Share", onClick = { viewModel.shareRecording(lastRecording!!) })
+                    PostRecordingAction(Icons.Default.Edit, "Rename", onClick = { showRenameDialog = true })
+                    PostRecordingAction(Icons.Default.Delete, "Delete", isError = true, onClick = { 
+                        viewModel.deleteRecording(lastRecording!!)
+                        showPostRecordingSheet = false
+                        onBack()
+                    })
                 }
+            }
+        }
+    }
+
+    if (showRenameDialog && lastRecording != null) {
+        RenameRecordingDialog(
+            currentName = lastRecording!!.fileName.substringBeforeLast("."),
+            onDismiss = { showRenameDialog = false },
+            onSave = { newName ->
+                viewModel.renameRecording(lastRecording!!, newName)
+                showRenameDialog = false
             }
         )
     }
+}
 
-    if (lastRecording != null) {
-        PostRecordingSheet(
-            recording = lastRecording!!,
-            viewModel = viewModel,
-            onDismiss = { 
-                viewModel.resetLastRecording()
-                onBack()
+@Composable
+fun RenameRecordingDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(currentName, TextRange(currentName.length)))
+    }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Recording") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = textFieldValue,
+                    onValueChange = { textFieldValue = it },
+                    label = { Text("File name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    isError = textFieldValue.text.isBlank()
+                )
+                if (textFieldValue.text.isBlank()) {
+                    Text(
+                        text = "Name cannot be empty",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                    )
+                }
             }
-        )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = textFieldValue.text.isNotBlank(),
+                onClick = { onSave(textFieldValue.text) }
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+fun PostRecordingAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, isError: Boolean = false) {
+    val contentColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick).padding(12.dp)) {
+        Icon(imageVector = icon, contentDescription = label, tint = contentColor.copy(alpha = 0.8f), modifier = Modifier.size(28.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = contentColor)
     }
 }
 
@@ -256,186 +304,19 @@ fun RecordingScreen(
 fun TimerDisplay(elapsedTimeMs: Long) {
     val minutes = TimeUnit.MILLISECONDS.toMinutes(elapsedTimeMs)
     val seconds = TimeUnit.MILLISECONDS.toSeconds(elapsedTimeMs) % 60
-    val millis = (elapsedTimeMs / 10) % 100
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds),
-            style = MaterialTheme.typography.displayLarge.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = String.format(Locale.getDefault(), ".%02d", millis),
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary
-            ),
-            modifier = Modifier.padding(top = 12.dp)
-        )
-    }
+    Text(String.format(Locale.getDefault(), "%d:%02d", minutes, seconds), style = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Default, fontWeight = FontWeight.Light, fontSize = 80.sp), color = MaterialTheme.colorScheme.onBackground)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PostRecordingSheet(
-    recording: RecordingEntity,
-    viewModel: RecorderViewModel,
-    onDismiss: () -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val playbackPosition by viewModel.playbackPosition.collectAsState()
-    val playbackDuration by viewModel.playbackDuration.collectAsState()
-    
-    var showRenameDialog by remember { mutableStateOf(false) }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 48.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = Color(0xFF10B981),
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Recording Saved", style = MaterialTheme.typography.headlineMedium)
-            Text(recording.fileName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Player Mini UI
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                    .padding(16.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { viewModel.togglePlayback(recording) },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
-                    ) {
-                        Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    LinearProgressIndicator(
-                        progress = { if (playbackDuration > 0) playbackPosition.toFloat() / playbackDuration else 0f },
-                        modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = formatDuration(playbackPosition),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = formatDuration(if (playbackDuration > 0) playbackDuration else recording.durationMs),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = { showRenameDialog = true }, 
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Rename")
-                }
-                OutlinedButton(onClick = { viewModel.shareRecording(recording) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Share")
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("Done")
-            }
-            
-            TextButton(
-                onClick = { viewModel.deleteRecording(recording); onDismiss() },
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("Delete Recording")
-            }
-        }
-    }
-    
-    if (showRenameDialog) {
-        var newName by remember { mutableStateOf(recording.fileName.substringBeforeLast(".")) }
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Rename Recording") },
-            text = {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("New name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (newName.isNotBlank()) {
-                            viewModel.renameRecording(recording, newName)
-                        }
-                    }
-                ) {
-                    Text("Rename")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { }) {
-                    Text("Cancel")
-                }
-            }
-        )
+fun RecordButton(onClick: () -> Unit) {
+    Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(SonicGradient).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(Icons.Default.Mic, "Record", tint = Color.White, modifier = Modifier.size(36.dp))
     }
 }
 
-private fun formatDuration(timeMs: Long): String {
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(timeMs)
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(timeMs) % 60
-    return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+@Composable
+fun ControlCircle(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, backgroundColor: Color, iconColor: Color, size: androidx.compose.ui.unit.Dp = 64.dp, iconSize: androidx.compose.ui.unit.Dp = 28.dp) {
+    Box(modifier = Modifier.size(size).clip(CircleShape).background(backgroundColor).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(imageVector = icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(iconSize))
+    }
 }

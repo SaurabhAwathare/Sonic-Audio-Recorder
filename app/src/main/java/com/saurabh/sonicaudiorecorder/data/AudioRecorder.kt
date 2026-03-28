@@ -5,6 +5,8 @@ import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,18 +29,25 @@ class AudioRecorder @Inject constructor(
     private var mediaRecorder: MediaRecorder? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
+    
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var automaticGainControl: AutomaticGainControl? = null
+    
     private var isRecording = false
+    private var isPaused = false
     
     private var lastAmplitude = 0f
 
-    private val sampleRate = 44100
-    private val channelConfig = AudioFormat.CHANNEL_IN_MONO
-    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-    private val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+    // High Quality Configuration
+    private val sampleRate = 48000 // Professional standard
+    private val channelConfig = AudioFormat.CHANNEL_IN_MONO // Mono for voice clarity
+    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT // High depth
+    private val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) * 2
 
     fun start(outputFile: File, format: String = "WAV") {
         if (isRecording) return
         isRecording = true
+        isPaused = false
         
         if (format == "WAV") {
             startWavRecording(outputFile)
@@ -54,11 +63,11 @@ class AudioRecorder @Inject constructor(
             @Suppress("DEPRECATION")
             MediaRecorder()
         }).apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION) // Optimized for clarity
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setAudioSamplingRate(sampleRate)
-            setAudioEncodingBitRate(128000)
+            setAudioEncodingBitRate(192000) // High bit rate for AAC
             setOutputFile(outputFile.absolutePath)
             prepare()
             start()
@@ -69,12 +78,22 @@ class AudioRecorder @Inject constructor(
     @SuppressLint("MissingPermission")
     private fun startWavRecording(outputFile: File) {
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION, // Best for clean, processed voice
             sampleRate,
             channelConfig,
             audioFormat,
             bufferSize
         )
+
+        // Enable Hardware Effects if available
+        if (NoiseSuppressor.isAvailable()) {
+            noiseSuppressor = NoiseSuppressor.create(audioRecord!!.audioSessionId)
+            noiseSuppressor?.enabled = true
+        }
+        if (AutomaticGainControl.isAvailable()) {
+            automaticGainControl = AutomaticGainControl.create(audioRecord!!.audioSessionId)
+            automaticGainControl?.enabled = true
+        }
 
         recordingJob = CoroutineScope(Dispatchers.IO).launch {
             val data = ByteArray(bufferSize)
@@ -85,15 +104,19 @@ class AudioRecorder @Inject constructor(
                 writeWavHeader(fos)
                 
                 audioRecord?.startRecording()
-                var totalAudioLen: Long = 0
-
+                
                 while (isRecording) {
+                    if (isPaused) {
+                        lastAmplitude = 0f
+                        Thread.sleep(100)
+                        continue
+                    }
+                    
                     val read = audioRecord?.read(data, 0, bufferSize) ?: 0
                     if (read > 0) {
                         fos.write(data, 0, read)
-                        totalAudioLen += read
                         
-                        // Amplitude calc
+                        // Amplitude calc for UI visualization
                         var sum = 0.0
                         for (i in 0 until read step 2) {
                             val sample = ByteBuffer.wrap(data, i, 2).order(ByteOrder.LITTLE_ENDIAN).short.toDouble()
@@ -107,12 +130,22 @@ class AudioRecorder @Inject constructor(
                 updateWavHeader(outputFile)
             } catch (e: Exception) {
                 Log.e("AudioRecorder", "WAV recording failed", e)
+            } finally {
+                cleanupEffects()
             }
         }
     }
 
+    private fun cleanupEffects() {
+        noiseSuppressor?.release()
+        noiseSuppressor = null
+        automaticGainControl?.release()
+        automaticGainControl = null
+    }
+
     fun stop() {
         isRecording = false
+        isPaused = false
         recordingJob?.cancel()
         
         mediaRecorder?.apply {
@@ -129,25 +162,28 @@ class AudioRecorder @Inject constructor(
     }
 
     fun getAmplitude(): Float {
+        if (isPaused) return 0f
         return if (mediaRecorder != null) {
-            mediaRecorder?.maxAmplitude?.toFloat() ?: 0f
+            try {
+                mediaRecorder?.maxAmplitude?.toFloat() ?: 0f
+            } catch (_: Exception) {
+                0f
+            }
         } else {
             lastAmplitude
         }
     }
 
-    @SuppressLint("ObsoleteSdkInt")
     fun pause() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            mediaRecorder?.pause()
-        }
+        if (!isRecording || isPaused) return
+        isPaused = true
+        mediaRecorder?.pause()
     }
 
-    @SuppressLint("ObsoleteSdkInt")
     fun resume() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            mediaRecorder?.resume()
-        }
+        if (!isRecording || !isPaused) return
+        isPaused = false
+        mediaRecorder?.resume()
     }
 
     private fun writeWavHeader(out: FileOutputStream) {
@@ -159,8 +195,8 @@ class AudioRecorder @Inject constructor(
         val totalDataLen = dataLength + 36
 
         header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
-        header[4] = (totalDataLen and 0xff).toByte(); header[5] = (0 and 0xff).toByte()
-        header[6] = (0 and 0xff).toByte(); header[7] = (0 and 0xff).toByte()
+        header[4] = (totalDataLen and 0xff).toByte(); header[5] = (0).toByte()
+        header[6] = (0).toByte(); header[7] = (0).toByte()
         header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
         header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
         header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0 

@@ -3,6 +3,7 @@ package com.saurabh.sonicaudiorecorder.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -10,37 +11,40 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saurabh.sonicaudiorecorder.data.AudioPlayer
-import com.saurabh.sonicaudiorecorder.data.AudioRecorder
 import com.saurabh.sonicaudiorecorder.data.SettingsRepository
 import com.example.audiorecorder01.data.local.RecordingDao
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
+import com.saurabh.sonicaudiorecorder.data.RecordingStateManager
+import com.saurabh.sonicaudiorecorder.data.RecordingStatus
+import com.saurabh.sonicaudiorecorder.service.PlaybackService
 import com.saurabh.sonicaudiorecorder.service.RecordingService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.log10
 
 @HiltViewModel
 class RecorderViewModel @Inject constructor(
     private val recordingDao: RecordingDao,
     private val audioPlayer: AudioPlayer,
     private val settingsRepository: SettingsRepository,
-    private val recorder: AudioRecorder,
+    private val stateManager: RecordingStateManager,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _isRecording = MutableStateFlow(false)
-    val isRecording: StateFlow<Boolean> = _isRecording
+    val isRecording: StateFlow<Boolean> = stateManager.state
+        .map { it != RecordingStatus.IDLE }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private val _isPaused = MutableStateFlow(false)
-    val isPaused: StateFlow<Boolean> = _isPaused
+    val isPaused: StateFlow<Boolean> = stateManager.state
+        .map { it == RecordingStatus.PAUSED }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private val _elapsedTime = MutableStateFlow(0L)
-    val elapsedTime: StateFlow<Long> = _elapsedTime
+    val elapsedTime: StateFlow<Long> = stateManager.elapsedTime
 
     private val _recordings = recordingDao.getAllRecordings()
         .catch { e -> 
@@ -59,13 +63,14 @@ class RecorderViewModel @Inject constructor(
     val currentPlayingPath = audioPlayer.currentPlayingPath
     val playbackPosition = audioPlayer.currentPosition
     val playbackDuration = audioPlayer.duration
-    
-    private val _amplitude = MutableStateFlow(0f)
-    val amplitude: StateFlow<Float> = _amplitude
 
-    private var timerJob: Job? = null
-    private var startTimeMillis = 0L
-    private var pausedTimeMillis = 0L
+    private val _amplitudeHistory = MutableStateFlow(List(80) { 0f })
+    val amplitudeHistory: StateFlow<List<Float>> = _amplitudeHistory
+
+    // DSP Tuning Parameters
+    private var smoothedAmplitude = 0f
+    private val smoothingFactor = 0.2f 
+    private val maxRawAmplitude = 32767f 
 
     init {
         viewModelScope.launch {
@@ -73,20 +78,32 @@ class RecorderViewModel @Inject constructor(
         }
         
         viewModelScope.launch {
-            while(true) {
-                if (_isRecording.value && !_isPaused.value) {
-                    _amplitude.value = recorder.getAmplitude()
-                } else {
-                    _amplitude.value = 0f
-                }
-                delay(100)
+            stateManager.amplitude.collect { raw ->
+                val processed = processAmplitude(raw)
+                updateHistory(processed)
             }
         }
     }
 
+    private fun updateHistory(newAmplitude: Float) {
+        _amplitudeHistory.update { current ->
+            (current.drop(1) + newAmplitude)
+        }
+    }
+
+    private fun processAmplitude(raw: Float): Float {
+        val normalized = (raw / maxRawAmplitude).coerceIn(0f, 1f)
+        val db = if (normalized > 0) 20 * log10(normalized.toDouble()).toFloat() else -100f
+        val logScaled = ((db + 60) / 60).coerceIn(0f, 1f)
+        val thresholded = if (logScaled < 0.1f) 0f else logScaled
+        smoothedAmplitude = (thresholded * smoothingFactor) + (smoothedAmplitude * (1f - smoothingFactor))
+        return smoothedAmplitude
+    }
+
     fun startRecording() {
-        if (_isRecording.value) return
+        if (isRecording.value) return
         _lastRecording.value = null
+        _amplitudeHistory.value = List(80) { 0f }
 
         viewModelScope.launch {
             val format = settingsRepository.audioFormat.first()
@@ -107,64 +124,39 @@ class RecorderViewModel @Inject constructor(
             val file = File(directory, fileName)
 
             try {
-                _isRecording.value = true
-                _isPaused.value = false
-                _elapsedTime.value = 0L
-                startTimeMillis = System.currentTimeMillis()
-                pausedTimeMillis = 0L
-                startTimer()
-                
                 val serviceIntent = Intent(context, RecordingService::class.java).apply {
                     action = RecordingService.ACTION_START
                     putExtra(RecordingService.EXTRA_FILE_PATH, file.absolutePath)
-                    putExtra("EXTRA_FORMAT", format)
+                    putExtra(RecordingService.EXTRA_FORMAT, format)
                 }
                 ContextCompat.startForegroundService(context, serviceIntent)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start recording service", e)
-                _isRecording.value = false
-                _isPaused.value = false
-                stopTimer()
             }
         }
     }
 
     fun pauseRecording() {
-        if (_isRecording.value && !_isPaused.value) {
-            recorder.pause()
-            _isPaused.value = true
-            pausedTimeMillis = System.currentTimeMillis()
-            stopTimer()
+        if (isRecording.value && !isPaused.value) {
+            val serviceIntent = Intent(context, RecordingService::class.java).apply {
+                action = RecordingService.ACTION_PAUSE
+            }
+            context.startService(serviceIntent)
         }
     }
 
     fun resumeRecording() {
-        if (_isRecording.value && _isPaused.value) {
-            recorder.resume()
-            _isPaused.value = false
-            startTimeMillis += (System.currentTimeMillis() - pausedTimeMillis)
-            startTimer()
-        }
-    }
-
-    private fun startTimer() {
-        timerJob?.cancel()
-        timerJob = viewModelScope.launch {
-            while (true) {
-                _elapsedTime.value = System.currentTimeMillis() - startTimeMillis
-                delay(100)
+        if (isRecording.value && isPaused.value) {
+            val serviceIntent = Intent(context, RecordingService::class.java).apply {
+                action = RecordingService.ACTION_RESUME
             }
+            context.startService(serviceIntent)
         }
-    }
-
-    private fun stopTimer() {
-        timerJob?.cancel()
-        timerJob = null
     }
 
     fun stopRecording() {
-        if (!_isRecording.value) return
+        if (!isRecording.value) return
         
         viewModelScope.launch {
             try {
@@ -179,10 +171,6 @@ class RecorderViewModel @Inject constructor(
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error stopping recording service", e)
-            } finally {
-                _isRecording.value = false
-                _isPaused.value = false
-                stopTimer()
             }
         }
     }
@@ -195,6 +183,14 @@ class RecorderViewModel @Inject constructor(
         try {
             val file = File(recording.filePath)
             if (file.exists()) {
+                val serviceIntent = Intent(context, PlaybackService::class.java).apply {
+                    putExtra("EXTRA_FILE_PATH", file.absolutePath)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
                 audioPlayer.playOrPause(file)
             } else {
                 Log.e(TAG, "File does not exist: ${recording.filePath}")
@@ -283,7 +279,6 @@ class RecorderViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         audioPlayer.release()
-        stopTimer()
     }
 
     companion object {
