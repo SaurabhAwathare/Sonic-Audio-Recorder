@@ -1,5 +1,6 @@
 package com.saurabh.sonicaudiorecorder.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -7,31 +8,43 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.saurabh.sonicaudiorecorder.MainActivity
-import com.saurabh.sonicaudiorecorder.data.AudioRecorder
+import androidx.core.content.ContextCompat
 import com.example.audiorecorder01.data.local.RecordingDao
-import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
+import com.saurabh.sonicaudiorecorder.MainActivity
+import com.saurabh.sonicaudiorecorder.R
+import com.saurabh.sonicaudiorecorder.data.AudioRecorder
+import com.saurabh.sonicaudiorecorder.data.AudioStateManager
 import com.saurabh.sonicaudiorecorder.data.RecordingStateManager
 import com.saurabh.sonicaudiorecorder.data.RecordingStatus
+import com.saurabh.sonicaudiorecorder.data.SettingsRepository
+import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
+private const val TAG = "RecordingService"
+
 @AndroidEntryPoint
-class RecordingService : Service() {
+class RecordingService : Service(), AudioRecorder.RecordingErrorListener {
 
     @Inject
     lateinit var audioRecorder: AudioRecorder
@@ -42,6 +55,12 @@ class RecordingService : Service() {
     @Inject
     lateinit var stateManager: RecordingStateManager
 
+    @Inject
+    lateinit var audioStateManager: AudioStateManager
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     
     private var currentFile: File? = null
@@ -49,6 +68,23 @@ class RecordingService : Service() {
     private var totalPausedTime: Long = 0L
     private var lastPauseTimestamp: Long = 0L
     private var isPaused = false
+    private var currentRecordingId: Int? = null
+
+    private lateinit var audioManager: AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.w(TAG, "Audio focus lost, pausing recording")
+                pauseRecording()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d(TAG, "Audio focus gained")
+            }
+        }
+    }
 
     private val handler = Handler(Looper.getMainLooper())
     private val updateTimerRunnable = object : Runnable {
@@ -56,16 +92,15 @@ class RecordingService : Service() {
             val elapsedTime = if (isPaused) {
                 lastPauseTimestamp - startTimeMillis - totalPausedTime
             } else {
-                System.currentTimeMillis() - startTimeMillis - totalPausedTime
+                SystemClock.elapsedRealtime() - startTimeMillis - totalPausedTime
             }
             
             stateManager.updateElapsedTime(elapsedTime)
             
             if (!isPaused) {
                 stateManager.updateAmplitude(audioRecorder.getAmplitude())
-                updateNotification()
             }
-            handler.postDelayed(this, 100) // Update state more frequently for UI
+            handler.postDelayed(this, 100)
         }
     }
 
@@ -82,16 +117,28 @@ class RecordingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "RecordingService Created")
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
+        audioRecorder.setErrorListener(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        Log.d(TAG, "onStartCommand: action = ${intent?.action}")
+        if (intent == null) {
+            Log.w(TAG, "onStartCommand: null intent received, stopping service")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (intent.action) {
             ACTION_START -> {
                 val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
                 val format = intent.getStringExtra(EXTRA_FORMAT) ?: "WAV"
                 if (filePath != null) {
                     startRecording(File(filePath), format)
+                } else {
+                    Log.e(TAG, "ACTION_START called with null filePath")
                 }
             }
             ACTION_PAUSE -> pauseRecording()
@@ -103,30 +150,102 @@ class RecordingService : Service() {
 
     @SuppressLint("InlinedApi")
     private fun startRecording(file: File, format: String) {
-        currentFile = file
-        startTimeMillis = System.currentTimeMillis()
-        totalPausedTime = 0L
-        isPaused = false
-        
-        stateManager.updateState(RecordingStatus.RECORDING)
-        
-        val notification = createNotification()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "startRecording: RECORD_AUDIO permission not granted")
+            onError("Microphone permission required")
+            return
         }
-        
-        audioRecorder.start(file, format)
-        handler.post(updateTimerRunnable)
+
+        if (requestAudioFocus()) {
+            Log.i(TAG, "Starting recording. File: ${file.name}, Format: $format")
+            currentFile = file
+            startTimeMillis = SystemClock.elapsedRealtime()
+            totalPausedTime = 0L
+            isPaused = false
+            
+            stateManager.updateState(RecordingStatus.RECORDING)
+            
+            // Atomic Insert: Create "PENDING" record in DB
+            serviceScope.launch(Dispatchers.IO) {
+                val id = recordingDao.insertRecording(
+                    RecordingEntity(
+                        fileName = file.name,
+                        filePath = file.absolutePath,
+                        durationMs = 0L,
+                        timestamp = System.currentTimeMillis(),
+                        fileSize = 0L,
+                        status = "PENDING"
+                    )
+                )
+                currentRecordingId = id.toInt()
+                Log.d(TAG, "Created pending DB entry with ID: $id")
+            }
+
+            serviceScope.launch {
+                if (settingsRepository.autoSilentMode.first()) {
+                    Log.d(TAG, "Auto Silent Mode is ON, enabling DND")
+                    audioStateManager.enableSilentMode()
+                }
+            }
+
+            val notification = createNotification()
+            
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start foreground service", e)
+            }
+            
+            audioRecorder.start(file, format)
+            handler.post(updateTimerRunnable)
+        } else {
+            Log.e(TAG, "Could not acquire audio focus")
+            Toast.makeText(this, "Microphone busy", Toast.LENGTH_SHORT).show()
+            stopSelf()
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build()
+            audioManager.requestAudioFocus(audioFocusRequest!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusChangeListener)
+        }
     }
 
     private fun pauseRecording() {
         if (!isPaused) {
+            Log.i(TAG, "Pausing recording")
             audioRecorder.pause()
             isPaused = true
-            lastPauseTimestamp = System.currentTimeMillis()
+            lastPauseTimestamp = SystemClock.elapsedRealtime()
             stateManager.updateState(RecordingStatus.PAUSED)
             updateNotification()
         }
@@ -134,39 +253,76 @@ class RecordingService : Service() {
 
     private fun resumeRecording() {
         if (isPaused) {
-            audioRecorder.resume()
-            isPaused = false
-            totalPausedTime += System.currentTimeMillis() - lastPauseTimestamp
-            stateManager.updateState(RecordingStatus.RECORDING)
-            updateNotification()
+            if (requestAudioFocus()) {
+                Log.i(TAG, "Resuming recording")
+                audioRecorder.resume()
+                isPaused = false
+                totalPausedTime += SystemClock.elapsedRealtime() - lastPauseTimestamp
+                stateManager.updateState(RecordingStatus.RECORDING)
+                updateNotification()
+            } else {
+                Toast.makeText(this, "Cannot resume: Mic busy", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun stopRecording() {
+        Log.i(TAG, "Stopping recording service")
         handler.removeCallbacks(updateTimerRunnable)
         audioRecorder.stop()
+        abandonAudioFocus()
+        finalizeRecording()
+    }
+
+    private fun finalizeRecording() {
         stateManager.updateState(RecordingStatus.IDLE)
+        audioStateManager.restoreAudioState()
         
-        currentFile?.let { file ->
+        val file = currentFile
+        val recordingId = currentRecordingId
+
+        if (file != null && recordingId != null) {
             serviceScope.launch(Dispatchers.IO) {
-                val finalDuration = if (isPaused) {
-                    lastPauseTimestamp - startTimeMillis - totalPausedTime
+                if (file.exists() && file.length() > 44) {
+                    val finalDuration = if (isPaused) {
+                        lastPauseTimestamp - startTimeMillis - totalPausedTime
+                    } else {
+                        SystemClock.elapsedRealtime() - startTimeMillis - totalPausedTime
+                    }
+                    
+                    Log.d(TAG, "Finalizing DB entry ID: $recordingId")
+                    recordingDao.updateRecording(
+                        RecordingEntity(
+                            id = recordingId,
+                            fileName = file.name,
+                            filePath = file.absolutePath,
+                            durationMs = finalDuration,
+                            timestamp = System.currentTimeMillis(),
+                            fileSize = file.length(),
+                            status = "COMPLETED"
+                        )
+                    )
+                    Log.i(TAG, "Recording saved and status marked as COMPLETED.")
                 } else {
-                    System.currentTimeMillis() - startTimeMillis - totalPausedTime
+                    Log.w(TAG, "File empty or invalid. Removing pending DB entry ID: $recordingId")
+                    // Use a minimal entity with just the ID to delete
+                    recordingDao.deleteRecording(RecordingEntity(id = recordingId, fileName = "", filePath = "", durationMs = 0, timestamp = 0, fileSize = 0))
                 }
                 
-                recordingDao.insertRecording(
-                    RecordingEntity(
-                        fileName = file.name,
-                        filePath = file.absolutePath,
-                        durationMs = finalDuration,
-                        timestamp = System.currentTimeMillis(),
-                        fileSize = file.length()
-                    )
-                )
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+        } else {
+            Log.w(TAG, "finalizeRecording: Missing file or ID. Cleaning up.")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    override fun onError(message: String) {
+        handler.post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+            stopRecording()
         }
     }
 
@@ -200,35 +356,29 @@ class RecordingService : Service() {
         val elapsedTime = if (isPaused) {
             lastPauseTimestamp - startTimeMillis - totalPausedTime
         } else {
-            System.currentTimeMillis() - startTimeMillis - totalPausedTime
+            SystemClock.elapsedRealtime() - startTimeMillis - totalPausedTime
         }
-        
-        val timerString = formatElapsedTime(elapsedTime)
+        val baseTime = System.currentTimeMillis() - elapsedTime
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(if (isPaused) "Recording Paused" else "Recording Audio...")
-            .setContentText("Duration: $timerString")
+            .setContentText(if (isPaused) "Tap to resume" else "Recording in progress")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setColor(ContextCompat.getColor(this, R.color.recording_red))
+            .setColorized(true)
             .setOngoing(true)
+            .setSilent(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setUsesChronometer(!isPaused)
+            .setWhen(baseTime)
+            .setShowWhen(true)
             .setStyle(androidx.media.app.NotificationCompat.MediaStyle()
                 .setShowActionsInCompactView(0, 1))
             .addAction(pauseResumeAction)
             .addAction(stopAction)
             .build()
-    }
-
-    private fun formatElapsedTime(millis: Long): String {
-        val hours = TimeUnit.MILLISECONDS.toHours(millis)
-        val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
-        val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
-        return if (hours > 0) {
-            String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
-        }
     }
 
     private fun createNotificationChannel() {
@@ -237,7 +387,10 @@ class RecordingService : Service() {
                 CHANNEL_ID,
                 "Audio Recording",
                 NotificationManager.IMPORTANCE_LOW
-            )
+            ).apply {
+                setShowBadge(false)
+                description = "Shows recording status and controls"
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
@@ -245,9 +398,19 @@ class RecordingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.w(TAG, "Task removed (app swiped away). Saving current recording state...")
+        stopRecording()
+    }
+
     override fun onDestroy() {
+        Log.d(TAG, "RecordingService Destroyed")
         handler.removeCallbacks(updateTimerRunnable)
+        audioRecorder.setErrorListener(null)
         stateManager.reset()
+        audioStateManager.restoreAudioState()
+        abandonAudioFocus()
         serviceScope.cancel()
         super.onDestroy()
     }

@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,25 +19,29 @@ android {
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0"
+        versionCode = 8
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            // Recommendation: Enable minification and resource shrinking for production builds
+            // Enable minification and resource shrinking for production builds
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Enable native debug symbols for Play Console crash analysis
+            
+            // 1. Native debug symbols for Play Console crash analysis (for C/C++ in dependencies like Media3)
             ndk {
                 debugSymbolLevel = "FULL"
             }
+            
+            // 2. Ensure R8/ProGuard mapping files are generated and retained
+            // These are normally included in the App Bundle (.aab) automatically.
         }
     }
 
@@ -60,6 +66,12 @@ android {
     buildFeatures {
         // Required for AGP Compose integration (Layout Inspector, etc.)
         compose = true
+    }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
     }
 
     packaging {
@@ -113,6 +125,8 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

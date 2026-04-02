@@ -20,6 +20,7 @@ class SettingsRepository @Inject constructor(
         val AUDIO_FORMAT = stringPreferencesKey("audio_format")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val STORAGE_LOCATION = stringPreferencesKey("storage_location")
+        val AUTO_SILENT_MODE = booleanPreferencesKey("auto_silent_mode")
     }
 
     val audioFormat: Flow<String> = context.dataStore.data.map { preferences ->
@@ -32,6 +33,10 @@ class SettingsRepository @Inject constructor(
 
     val storageLocation: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.STORAGE_LOCATION] ?: "Internal"
+    }
+
+    val autoSilentMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.AUTO_SILENT_MODE] ?: false
     }
 
     suspend fun updateAudioFormat(format: String) {
@@ -51,4 +56,5 @@ class SettingsRepository @Inject constructor(
             preferences[PreferencesKeys.STORAGE_LOCATION] = location
         }
     }
+
 }

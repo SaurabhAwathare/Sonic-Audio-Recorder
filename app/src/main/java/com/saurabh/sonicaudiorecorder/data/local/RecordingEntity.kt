@@ -12,5 +12,6 @@ data class RecordingEntity(
     val filePath: String,
     val durationMs: Long,
     val timestamp: Long,
-    val fileSize: Long
+    val fileSize: Long,
+    val status: String = "COMPLETED" // COMPLETED or PENDING
 )

@@ -2,7 +2,9 @@ package com.saurabh.sonicaudiorecorder.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,6 +15,8 @@ import kotlinx.coroutines.flow.flow
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "AudioPlayer"
 
 @Singleton
 class AudioPlayer @Inject constructor(
@@ -39,20 +43,32 @@ class AudioPlayer @Inject constructor(
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         _isPlaying.value = isPlaying
+                        Log.d(TAG, "Playback state changed: isPlaying = $isPlaying")
                     }
 
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) {
-                            _duration.value = duration
+                        when (state) {
+                            Player.STATE_READY -> {
+                                _duration.value = duration
+                                Log.d(TAG, "Player STATE_READY. Duration: $duration ms")
+                            }
+                            Player.STATE_ENDED -> {
+                                _isPlaying.value = false
+                                _currentPlayingPath.value = null
+                                _currentPosition.value = 0L
+                                Log.d(TAG, "Player STATE_ENDED")
+                            }
+                            Player.STATE_BUFFERING -> Log.d(TAG, "Player STATE_BUFFERING")
+                            Player.STATE_IDLE -> Log.d(TAG, "Player STATE_IDLE")
                         }
-                        if (state == Player.STATE_ENDED) {
-                            _isPlaying.value = false
-                            _currentPlayingPath.value = null
-                            _currentPosition.value = 0L
-                        }
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.e(TAG, "Player Error: ${error.message}", error)
                     }
                 })
             }
+            Log.d(TAG, "ExoPlayer initialized")
         }
     }
 
@@ -60,11 +76,14 @@ class AudioPlayer @Inject constructor(
         ensurePlayer()
         if (_currentPlayingPath.value == file.absolutePath) {
             if (_isPlaying.value) {
+                Log.i(TAG, "Pausing playback: ${file.name}")
                 _exoPlayer?.pause()
             } else {
+                Log.i(TAG, "Resuming playback: ${file.name}")
                 _exoPlayer?.play()
             }
         } else {
+            Log.i(TAG, "Starting playback: ${file.absolutePath}")
             val uri = Uri.fromFile(file)
             val mediaItem = MediaItem.fromUri(uri)
             _exoPlayer?.setMediaItem(mediaItem)
@@ -75,6 +94,7 @@ class AudioPlayer @Inject constructor(
     }
 
     fun seekTo(positionMs: Long) {
+        Log.d(TAG, "Seeking to: $positionMs ms")
         _exoPlayer?.seekTo(positionMs)
         _currentPosition.value = positionMs
     }
@@ -90,6 +110,7 @@ class AudioPlayer @Inject constructor(
     }
 
     fun stopPlayback() {
+        Log.i(TAG, "Stopping playback")
         _exoPlayer?.stop()
         _isPlaying.value = false
         _currentPlayingPath.value = null
@@ -97,6 +118,7 @@ class AudioPlayer @Inject constructor(
     }
 
     fun release() {
+        Log.d(TAG, "Releasing ExoPlayer")
         _exoPlayer?.release()
         _exoPlayer = null
     }

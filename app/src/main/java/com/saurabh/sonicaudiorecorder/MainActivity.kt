@@ -33,7 +33,6 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    @Suppress("KotlinConstantConditions")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -76,13 +75,6 @@ class MainActivity : ComponentActivity() {
                             Toast.LENGTH_LONG
                         ).show()
                     }
-                    if (!notificationGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        Toast.makeText(
-                            context,
-                            "Notification permission is recommended for background controls",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
                 }
 
                 LaunchedEffect(Unit) {
@@ -98,7 +90,8 @@ class MainActivity : ComponentActivity() {
 
                 NavHost(navController = navController, startDestination = "recorder") {
                     composable("recorder") {
-                        val recorderViewModel: RecorderViewModel = hiltViewModel()
+                        // Scope the ViewModel to the Activity to share it between screens
+                        val recorderViewModel: RecorderViewModel = hiltViewModel(context as ComponentActivity)
                         RecorderScreen(
                             viewModel = recorderViewModel,
                             onNavigateToSettings = { navController.navigate("settings") },
@@ -106,7 +99,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("recording_flow") {
-                        val recorderViewModel: RecorderViewModel = hiltViewModel()
+                        val recorderViewModel: RecorderViewModel = hiltViewModel(context as ComponentActivity)
                         RecordingScreen(
                             viewModel = recorderViewModel,
                             onBack = { navController.popBackStack() }

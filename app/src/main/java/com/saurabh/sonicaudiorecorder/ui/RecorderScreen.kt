@@ -26,7 +26,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,11 +98,10 @@ fun RecorderScreenContent(
         val fullHeightPx = constraints.maxHeight.toFloat()
         val screenWidthPx = constraints.maxWidth.toFloat()
         
-        val peekHeightDp = 280.dp
+        val peekHeightDp = 300.dp 
         val peekHeightPx = with(density) { peekHeightDp.toPx() }
-        val expandedSheetTopPx = fullHeightPx * 0.25f
+        val expandedSheetTopPx = fullHeightPx * 0.2f 
         
-        // Header calculation
         val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val statusBarPx = with(density) { statusBarHeight.toPx() }
         val topContainerCenterY = (statusBarPx + expandedSheetTopPx) / 2
@@ -117,13 +115,11 @@ fun RecorderScreenContent(
             }
         }
 
-        // Anchor calculation for Waveform
-        val initialButtonOffsetY = 60.dp
+        val initialButtonOffsetY = (-40).dp 
         val initialXCenter = screenWidthPx / 2
         val initialYCenter = (fullHeightPx / 2) + with(density) { initialButtonOffsetY.toPx() }
         
-        // Decoupled initial waveform center from button center to prevent overlap
-        val initialWaveformGap = with(density) { 120.dp.toPx() } 
+        val initialWaveformGap = with(density) { 100.dp.toPx() } 
         val initialWaveformY = initialYCenter - initialWaveformGap
         
         val buttonSize = 110.dp
@@ -141,7 +137,7 @@ fun RecorderScreenContent(
                 sheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
                 sheetShadowElevation = 16.dp,
                 sheetContent = {
-                    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.75f)) {
+                    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
                         if (recordings.isEmpty()) {
                             EmptyState()
                         } else {
@@ -162,7 +158,6 @@ fun RecorderScreenContent(
                 }
             ) { /* Content handled by layering */ }
 
-            // LAYER 2: WAVEFORM
             WaveformVisualizer(
                 amplitudes = amplitudeHistory,
                 progress = progress,
@@ -171,7 +166,6 @@ fun RecorderScreenContent(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // LAYER 3: HEADER
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -179,16 +173,7 @@ fun RecorderScreenContent(
                     .padding(top = 20.dp)
                     .zIndex(10f)
             ) {
-                Text(
-                    text = "Sonic Audio Recorder",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.5.sp
-                    ),
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
+                // Title "Sonic Audio Recorder" removed to hide it from the top
 
                 IconButton(
                     onClick = onNavigateToSettings,
@@ -204,7 +189,6 @@ fun RecorderScreenContent(
                 }
             }
 
-            // LAYER 4: RECORD BUTTON
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
