@@ -3,6 +3,7 @@ package com.saurabh.sonicaudiorecorder.di
 import android.content.Context
 import androidx.room.Room
 import com.saurabh.sonicaudiorecorder.data.local.AppDatabase
+import com.saurabh.sonicaudiorecorder.data.local.MIGRATION_1_2
 import com.example.audiorecorder01.data.local.RecordingDao
 import dagger.Module
 import dagger.Provides
@@ -22,7 +23,9 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "recordings_db"
-        ).build()
+        )
+            .addMigrations(MIGRATION_1_2)
+            .build()
     }
 
     @Provides

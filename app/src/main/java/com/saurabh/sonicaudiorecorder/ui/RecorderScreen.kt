@@ -1,49 +1,29 @@
 package com.saurabh.sonicaudiorecorder.ui
 
-import android.annotation.SuppressLint
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.lerp
-import androidx.compose.ui.zIndex
 import com.saurabh.sonicaudiorecorder.R
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
-import com.saurabh.sonicaudiorecorder.ui.components.MainRecordButton
-import com.saurabh.sonicaudiorecorder.ui.components.PlaybackWaveform
-import com.saurabh.sonicaudiorecorder.ui.components.WaveformVisualizer
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
-import java.text.SimpleDateFormat
-import java.util.*
-
 import com.saurabh.sonicaudiorecorder.data.waveform.WaveformRepository
+import com.saurabh.sonicaudiorecorder.ui.components.EmptyRecordingsState
+import com.saurabh.sonicaudiorecorder.ui.components.MainRecordButton
+import com.saurabh.sonicaudiorecorder.ui.components.RecordingItemCard
+import com.saurabh.sonicaudiorecorder.ui.components.WaveformVisualizer
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecorderScreen(
     viewModel: RecorderViewModel,
@@ -75,7 +55,6 @@ fun RecorderScreen(
     )
 }
 
-@SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecorderScreenContent(
@@ -96,132 +75,123 @@ fun RecorderScreenContent(
 ) {
     var recordingToDelete by remember { mutableStateOf<RecordingEntity?>(null) }
     var recordingToRename by remember { mutableStateOf<RecordingEntity?>(null) }
-    val scaffoldState = rememberBottomSheetScaffoldState()
-    val density = LocalDensity.current
-    
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val fullHeightPx = constraints.maxHeight.toFloat()
-        val screenWidthPx = constraints.maxWidth.toFloat()
-        
-        val peekHeightDp = 200.dp 
-        val peekHeightPx = with(density) { peekHeightDp.toPx() }
-        val expandedSheetTopPx = fullHeightPx * 0.2f 
-        
-        val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val statusBarPx = with(density) { statusBarHeight.toPx() }
-        val topContainerCenterY = (statusBarPx + expandedSheetTopPx) / 2
-        
-        val progress by remember {
-            derivedStateOf {
-                val currentOffset = try { scaffoldState.bottomSheetState.requireOffset() } catch (_: Exception) { fullHeightPx - peekHeightPx }
-                val totalRange = (fullHeightPx - peekHeightPx) - expandedSheetTopPx
-                val currentProgress = if (totalRange > 0) ((fullHeightPx - peekHeightPx) - currentOffset) / totalRange else 0f
-                currentProgress.coerceIn(0f, 1f)
-            }
-        }
 
-        val initialButtonOffsetY = (-40).dp 
-        val initialXCenter = screenWidthPx / 2
-        val initialYCenter = (fullHeightPx / 2) + with(density) { initialButtonOffsetY.toPx() }
-        
-        val initialWaveformGap = with(density) { 100.dp.toPx() } 
-        val initialWaveformY = initialYCenter - initialWaveformGap
-        
-        val buttonSize = 110.dp
-        val targetScale = 0.75f
-        val targetXPx = with(density) { (24.dp + (buttonSize * targetScale) / 2).toPx() }
-        
-        val currentAnchorX = lerp(initialXCenter, targetXPx, progress)
-        val currentAnchorY = lerp(initialWaveformY, topContainerCenterY, progress)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Waveform visualizer as reactive ambient background
+        WaveformVisualizer(
+            amplitudes = amplitudeHistory,
+            modifier = Modifier.fillMaxSize()
+        )
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            BottomSheetScaffold(
-                scaffoldState = scaffoldState,
-                sheetPeekHeight = peekHeightDp,
-                sheetContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-                sheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-                sheetShadowElevation = 16.dp,
-                sheetContent = {
-                    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
-                        if (recordings.isEmpty()) {
-                            EmptyState()
-                        } else {
-                            RecordingList(
-                                recordings = recordings,
-                                isPlaying = isPlaying,
-                                currentPlayingPath = currentPlayingPath,
-                                playbackPosition = playbackPosition,
-                                playbackDuration = playbackDuration,
-                                waveformRepository = waveformRepository,
-                                onTogglePlayback = onTogglePlayback,
-                                onSeek = onSeek,
-                                onDeleteRequest = { recordingToDelete = it },
-                                onRenameRequest = { recordingToRename = it },
-                                onShareRequest = onShareRecording
-                            )
-                        }
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                // Sonic Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.home_header_title),
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.5).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+
+                    IconButton(
+                        onClick = onNavigateToSettings
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.settings_title),
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                 }
-            ) { /* Content handled by layering */ }
-
-            WaveformVisualizer(
-                amplitudes = amplitudeHistory,
-                progress = progress,
-                anchorX = currentAnchorX,
-                anchorY = currentAnchorY,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            Row(
+            }
+        ) { innerPadding ->
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
-                    .zIndex(10f),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                Text(
-                    text = stringResource(R.string.home_header_title),
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.5).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground.copy(
-                        alpha = (1f - progress * 2f).coerceIn(0f, 1f)
-                    )
-                )
-
-                IconButton(
-                    onClick = onNavigateToSettings
+                // Prominent Recording Action Area
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = stringResource(R.string.settings_title),
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                    MainRecordButton(
+                        onClick = onNavigateToRecording,
+                        labelAlpha = 1f
                     )
                 }
-            }
 
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                MainRecordButton(
-                    onClick = onNavigateToRecording,
-                    labelAlpha = (1f - progress * 2.5f).coerceIn(0f, 1f),
+                // Saved Recordings Section Header & Count
+                Row(
                     modifier = Modifier
-                        .offset(y = initialButtonOffsetY)
-                        .zIndex(9f)
-                        .graphicsLayer {
-                            val s = lerp(1f, targetScale, progress)
-                            scaleX = s
-                            scaleY = s
-                            
-                            translationX = (targetXPx - initialXCenter) * progress
-                            translationY = (topContainerCenterY - initialYCenter) * progress
-                        }
-                )
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Saved Recordings",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Text(
+                            text = "${recordings.size}",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                // Recordings List or Empty State
+                if (recordings.isEmpty()) {
+                    EmptyRecordingsState(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                } else {
+                    RecordingList(
+                        recordings = recordings,
+                        isPlaying = isPlaying,
+                        currentPlayingPath = currentPlayingPath,
+                        playbackPosition = playbackPosition,
+                        playbackDuration = playbackDuration,
+                        waveformRepository = waveformRepository,
+                        onTogglePlayback = onTogglePlayback,
+                        onSeek = onSeek,
+                        onDeleteRequest = { recordingToDelete = it },
+                        onRenameRequest = { recordingToRename = it },
+                        onShareRequest = onShareRecording,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -229,19 +199,20 @@ fun RecorderScreenContent(
     // DIALOGS
     recordingToDelete?.let { recording ->
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = { recordingToDelete = null },
             title = { Text("Delete Recording") },
             text = { Text("Are you sure you want to delete '${getRecordingDisplayTitle(recording)}'?") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         onDeleteRecording(recording)
+                        recordingToDelete = null
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
             dismissButton = {
-                TextButton(onClick = { }) { Text("Cancel") }
+                TextButton(onClick = { recordingToDelete = null }) { Text("Cancel") }
             }
         )
     }
@@ -249,7 +220,7 @@ fun RecorderScreenContent(
     recordingToRename?.let { recording ->
         var newName by remember { mutableStateOf(getRecordingDisplayTitle(recording)) }
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = { recordingToRename = null },
             title = { Text("Rename Recording") },
             text = {
                 OutlinedTextField(
@@ -265,55 +236,14 @@ fun RecorderScreenContent(
                     onClick = {
                         if (newName.isNotBlank()) {
                             onRenameRecording(recording, newName)
+                            recordingToRename = null
                         }
                     }
                 ) { Text("Rename") }
             },
             dismissButton = {
-                TextButton(onClick = { }) { Text("Cancel") }
+                TextButton(onClick = { recordingToRename = null }) { Text("Cancel") }
             }
-        )
-    }
-}
-
-@Composable
-private fun EmptyState() {
-    val infiniteTransition = rememberInfiniteTransition(label = "emptyState")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Default.Headset,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "Your studio is empty",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            letterSpacing = 1.sp
-        )
-        Text(
-            text = "Tap the mic to start your first session",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            modifier = Modifier.padding(top = 8.dp)
         )
     }
 }
@@ -325,6 +255,7 @@ private fun RecordingList(
     currentPlayingPath: String?,
     playbackPosition: Long,
     playbackDuration: Long,
+    modifier: Modifier = Modifier,
     waveformRepository: WaveformRepository? = null,
     onTogglePlayback: (RecordingEntity) -> Unit,
     onSeek: (Long) -> Unit,
@@ -333,14 +264,14 @@ private fun RecordingList(
     onShareRequest: (RecordingEntity) -> Unit
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp, start = 24.dp, end = 24.dp, top = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp, start = 20.dp, end = 20.dp, top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(recordings, key = { it.id }) { recording ->
             val isThisItemActive = currentPlayingPath == recording.filePath
-            
-            RecordingItem(
+
+            RecordingItemCard(
                 recording = recording,
                 isPlaying = isPlaying && isThisItemActive,
                 isActive = isThisItemActive,
@@ -353,158 +284,6 @@ private fun RecordingList(
                 onRename = { onRenameRequest(recording) },
                 onShare = { onShareRequest(recording) }
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RecordingItem(
-    recording: RecordingEntity,
-    isPlaying: Boolean,
-    isActive: Boolean,
-    playbackPosition: Long,
-    playbackDuration: Long,
-    waveformRepository: WaveformRepository? = null,
-    onPlayClick: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onDelete: () -> Unit,
-    onRename: () -> Unit,
-    onShare: () -> Unit
-) {
-    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
-    var showMenu by remember { mutableStateOf(false) }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .border(
-                width = 1.dp,
-                brush = Brush.horizontalGradient(
-                    listOf(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), Color.Transparent)
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
-            .clickable(onClick = onPlayClick)
-            .padding(20.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(
-                            if (isActive) SonicGradient else Brush.linearGradient(listOf(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))),
-                            CircleShape
-                        )
-                        .clip(CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = if (isActive) Color.White else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = getRecordingDisplayTitle(recording),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${formatDuration(recording.durationMs)} \u2022 ${dateFormat.format(Date(recording.timestamp))}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rename") },
-                            onClick = {
-                                showMenu = false
-                                onRename()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Share") },
-                            onClick = {
-                                showMenu = false
-                                onShare()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            onClick = {
-                                showMenu = false
-                                onDelete()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = isActive,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Column(modifier = Modifier.padding(top = 16.dp)) {
-                    PlaybackWaveform(
-                        filePath = recording.filePath,
-                        playbackPosition = playbackPosition,
-                        playbackDuration = playbackDuration,
-                        onSeek = onSeek,
-                        waveformRepository = waveformRepository,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = formatDuration(playbackPosition),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SonicPurple
-                        )
-                        Text(
-                            text = formatDuration(playbackDuration),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
         }
     }
 }

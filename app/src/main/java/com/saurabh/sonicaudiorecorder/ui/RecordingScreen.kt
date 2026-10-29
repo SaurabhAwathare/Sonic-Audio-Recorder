@@ -82,8 +82,8 @@ import com.saurabh.sonicaudiorecorder.data.RecordingStatus
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import com.saurabh.sonicaudiorecorder.ui.components.RecordingBarVisualizer
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicPink
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
+import com.saurabh.sonicaudiorecorder.ui.theme.TimerTextStyle
+import com.saurabh.sonicaudiorecorder.ui.theme.sonicColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -245,8 +245,8 @@ fun RecordingScreen(
                                 icon = Icons.Default.Stop,
                                 label = stringResource(R.string.recording_control_stop),
                                 onClick = { viewModel.stopRecording() },
-                                backgroundColor = SonicPurple,
-                                iconColor = Color.White,
+                                backgroundColor = MaterialTheme.colorScheme.primary,
+                                iconColor = MaterialTheme.colorScheme.onPrimary,
                                 enabled = !isFinalizing,
                                 size = 76.dp,
                                 iconSize = 34.dp
@@ -346,7 +346,7 @@ fun PostRecordingReviewSheetContent(
         Icon(
             imageVector = Icons.Default.CheckCircle,
             contentDescription = null,
-            tint = Color(0xFF4CAF50),
+            tint = MaterialTheme.sonicColors.successState,
             modifier = Modifier.size(52.dp)
         )
         Spacer(modifier = Modifier.height(12.dp))
@@ -469,8 +469,8 @@ fun PostRecordingReviewSheetContent(
                                 onSeek((fraction * effectiveDuration).toLong())
                             },
                             colors = SliderDefaults.colors(
-                                thumbColor = SonicPurple,
-                                activeTrackColor = SonicPurple,
+                                thumbColor = MaterialTheme.sonicColors.waveformPlayed,
+                                activeTrackColor = MaterialTheme.sonicColors.waveformPlayed,
                                 inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
                             ),
                             modifier = Modifier.height(24.dp)
@@ -483,7 +483,7 @@ fun PostRecordingReviewSheetContent(
                             Text(
                                 text = formatDuration(playbackPosition),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = SonicPurple
+                                color = MaterialTheme.sonicColors.waveformPlayed
                             )
                             Text(
                                 text = formatDuration(effectiveDuration),
@@ -595,10 +595,10 @@ fun StatusFormatBadge(
     }
 
     val statusDotColor = when (recordingStatus) {
-        RecordingStatus.RECORDING -> SonicPink
-        RecordingStatus.PAUSED -> Color(0xFFFF9500)
-        RecordingStatus.FINALIZING -> SonicPurple
-        RecordingStatus.IDLE -> SonicPurple
+        RecordingStatus.RECORDING -> MaterialTheme.sonicColors.recordingActive
+        RecordingStatus.PAUSED -> MaterialTheme.sonicColors.recordingPaused
+        RecordingStatus.FINALIZING -> MaterialTheme.colorScheme.primary
+        RecordingStatus.IDLE -> MaterialTheme.colorScheme.primary
     }
 
     Surface(
@@ -656,12 +656,7 @@ fun TabularTimerDisplay(elapsedTimeMs: Long) {
 
     Text(
         text = formattedTime,
-        style = MaterialTheme.typography.displayLarge.copy(
-            fontSize = 60.sp,
-            fontWeight = FontWeight.Light,
-            fontFeatureSettings = "tnum",
-            letterSpacing = 0.sp
-        ),
+        style = TimerTextStyle,
         color = MaterialTheme.colorScheme.onBackground,
         textAlign = TextAlign.Center
     )
@@ -802,7 +797,7 @@ fun PostRecordingAction(
     onClick: () -> Unit,
     isError: Boolean = false
 ) {
-    val contentColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val contentColor = if (isError) MaterialTheme.sonicColors.errorState else MaterialTheme.colorScheme.onSurface
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier

@@ -2,6 +2,11 @@
 
 package com.saurabh.sonicaudiorecorder.ui.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
@@ -78,3 +83,46 @@ val md_theme_light_surfaceVariant = StudioLightContainer
 val md_theme_light_onSurfaceVariant = LightTextSecondary
 val md_theme_light_outline = LightBorder
 val md_theme_light_surfaceContainerHigh = Color(0xFFE2E8F0)
+
+/**
+ * Sonic Semantic Color Tokens
+ * Type-safe custom color roles for audio recording and playback states.
+ */
+@Immutable
+data class SonicColors(
+    val recordingActive: Color,
+    val recordingPaused: Color,
+    val waveformPlayed: Color,
+    val waveformUnplayed: Color,
+    val playheadCursor: Color,
+    val successState: Color,
+    val errorState: Color
+)
+
+val DarkSonicColors = SonicColors(
+    recordingActive = SonicPink,
+    recordingPaused = Color(0xFFFF9500),
+    waveformPlayed = SonicPurple,
+    waveformUnplayed = DarkBorder,
+    playheadCursor = SonicViolet,
+    successState = Color(0xFF4CAF50),
+    errorState = md_theme_dark_error
+)
+
+val LightSonicColors = SonicColors(
+    recordingActive = SonicPinkLight,
+    recordingPaused = Color(0xFFD97706),
+    waveformPlayed = SonicPurpleLight,
+    waveformUnplayed = LightBorder,
+    playheadCursor = SonicPurpleLight,
+    successState = Color(0xFF2E7D32),
+    errorState = md_theme_light_error
+)
+
+val LocalSonicColors = staticCompositionLocalOf { LightSonicColors }
+
+val MaterialTheme.sonicColors: SonicColors
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalSonicColors.current
+

@@ -9,6 +9,9 @@ interface RecordingDao {
     @Query("SELECT * FROM recordings WHERE status = 'COMPLETED' ORDER BY timestamp DESC")
     fun getAllRecordings(): Flow<List<RecordingEntity>>
 
+    @Query("SELECT * FROM recordings ORDER BY id ASC")
+    suspend fun getAllRecordingsList(): List<RecordingEntity>
+
     @Query("SELECT * FROM recordings WHERE status = 'PENDING'")
     suspend fun getPendingRecordings(): List<RecordingEntity>
 

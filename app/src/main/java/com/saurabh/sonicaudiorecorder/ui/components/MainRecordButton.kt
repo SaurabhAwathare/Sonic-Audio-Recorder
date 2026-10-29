@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.saurabh.sonicaudiorecorder.R
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
 
 @Composable
 fun MainRecordButton(
@@ -70,8 +69,8 @@ fun MainRecordButton(
                 .shadow(
                     elevation = 12.dp,
                     shape = CircleShape,
-                    ambientColor = SonicPurple.copy(alpha = 0.5f),
-                    spotColor = SonicPurple
+                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    spotColor = MaterialTheme.colorScheme.primary
                 )
                 .clip(CircleShape)
                 .background(SonicGradient)

@@ -12,11 +12,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import com.saurabh.sonicaudiorecorder.data.waveform.M4aWaveformExtractor
 import com.saurabh.sonicaudiorecorder.data.waveform.WavWaveformExtractor
 import com.saurabh.sonicaudiorecorder.data.waveform.WaveformRepository
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
-import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
+import com.saurabh.sonicaudiorecorder.ui.theme.sonicColors
 
 private val fallbackRepository by lazy {
     WaveformRepository(WavWaveformExtractor(), M4aWaveformExtractor())
@@ -41,6 +42,9 @@ fun PlaybackWaveform(
     
     val progress = if (playbackDuration > 0) playbackPosition.toFloat() / playbackDuration else 0f
     
+    val unplayedColor = MaterialTheme.sonicColors.waveformUnplayed
+    val playheadColor = MaterialTheme.sonicColors.playheadCursor
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -69,7 +73,7 @@ fun PlaybackWaveform(
         if (amplitudes.isEmpty()) {
             // Draw a subtle flat line while loading or if no data
             drawLine(
-                color = Color.Gray.copy(alpha = 0.1f),
+                color = unplayedColor.copy(alpha = 0.5f),
                 start = Offset(0f, centerY),
                 end = Offset(width, centerY),
                 strokeWidth = 1.dp.toPx()
@@ -101,7 +105,7 @@ fun PlaybackWaveform(
         // 1. Draw Background (Faded "unplayed" state)
         drawPath(
             path = path,
-            color = Color.Gray.copy(alpha = 0.15f),
+            color = unplayedColor,
             style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
 
@@ -121,7 +125,7 @@ fun PlaybackWaveform(
         // 3. Playhead Cursor
         if (progress > 0 && progress < 1f) {
             drawLine(
-                color = SonicPurple,
+                color = playheadColor,
                 start = Offset(playedWidth, 0f),
                 end = Offset(playedWidth, height),
                 strokeWidth = 2.dp.toPx(),

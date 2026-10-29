@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 
 private val DarkColorScheme = darkColorScheme(
     primary = md_theme_dark_primary,
@@ -60,10 +61,13 @@ fun AudioRecorder01Theme(
     }
 
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val sonicColors = if (darkTheme) DarkSonicColors else LightSonicColors
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalSonicColors provides sonicColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

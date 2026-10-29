@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import com.saurabh.sonicaudiorecorder.ui.theme.SonicPink
+import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
+import com.saurabh.sonicaudiorecorder.ui.theme.SonicViolet
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -34,12 +37,8 @@ fun WaveformVisualizer(
         ), label = "globalTime"
     )
 
-    val sonicPurple = Color(0xFF7F00FF)
-    val sonicPink = Color(0xFFE100FF)
-    val sonicViolet = Color(0xFF8A2BE2)
-    
     val gradient = Brush.linearGradient(
-        colors = listOf(sonicPurple, sonicPink, sonicViolet),
+        colors = listOf(SonicPurple, SonicPink, SonicViolet),
         start = Offset.Zero,
         end = Offset.Infinite
     )

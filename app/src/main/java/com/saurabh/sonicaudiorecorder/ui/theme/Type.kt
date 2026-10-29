@@ -6,6 +6,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+/**
+ * Shared Timer Display style preserving tabular numerals ("tnum")
+ */
+val TimerTextStyle = TextStyle(
+    fontFamily = FontFamily.Default,
+    fontWeight = FontWeight.Light,
+    fontSize = 60.sp,
+    lineHeight = 68.sp,
+    letterSpacing = 0.sp,
+    fontFeatureSettings = "tnum"
+)
+
 val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.Default,
