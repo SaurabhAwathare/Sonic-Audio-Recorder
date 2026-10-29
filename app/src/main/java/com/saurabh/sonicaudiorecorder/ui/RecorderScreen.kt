@@ -20,17 +20,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.zIndex
+import com.saurabh.sonicaudiorecorder.R
 import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import com.saurabh.sonicaudiorecorder.ui.components.MainRecordButton
 import com.saurabh.sonicaudiorecorder.ui.components.PlaybackWaveform
@@ -102,7 +103,7 @@ fun RecorderScreenContent(
         val fullHeightPx = constraints.maxHeight.toFloat()
         val screenWidthPx = constraints.maxWidth.toFloat()
         
-        val peekHeightDp = 300.dp 
+        val peekHeightDp = 200.dp 
         val peekHeightPx = with(density) { peekHeightDp.toPx() }
         val expandedSheetTopPx = fullHeightPx * 0.2f 
         
@@ -171,24 +172,32 @@ fun RecorderScreenContent(
                 modifier = Modifier.fillMaxSize()
             )
 
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(top = 20.dp)
-                    .zIndex(10f)
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .zIndex(10f),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Title "Sonic Audio Recorder" removed to hide it from the top
+                Text(
+                    text = stringResource(R.string.home_header_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground.copy(
+                        alpha = (1f - progress * 2f).coerceIn(0f, 1f)
+                    )
+                )
 
                 IconButton(
-                    onClick = onNavigateToSettings,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 16.dp)
+                    onClick = onNavigateToSettings
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
+                        contentDescription = stringResource(R.string.settings_title),
                         tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
                     )
                 }
@@ -200,6 +209,7 @@ fun RecorderScreenContent(
             ) {
                 MainRecordButton(
                     onClick = onNavigateToRecording,
+                    labelAlpha = (1f - progress * 2.5f).coerceIn(0f, 1f),
                     modifier = Modifier
                         .offset(y = initialButtonOffsetY)
                         .zIndex(9f)
@@ -211,12 +221,6 @@ fun RecorderScreenContent(
                             translationX = (targetXPx - initialXCenter) * progress
                             translationY = (topContainerCenterY - initialYCenter) * progress
                         }
-                        .shadow(
-                            elevation = 20.dp,
-                            shape = CircleShape,
-                            ambientColor = SonicPurple.copy(alpha = 0.5f),
-                            spotColor = SonicPurple
-                        )
                 )
             }
         }
@@ -227,7 +231,7 @@ fun RecorderScreenContent(
         AlertDialog(
             onDismissRequest = { },
             title = { Text("Delete Recording") },
-            text = { Text("Are you sure you want to delete '${recording.fileName}'?") },
+            text = { Text("Are you sure you want to delete '${getRecordingDisplayTitle(recording)}'?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -243,7 +247,7 @@ fun RecorderScreenContent(
     }
 
     recordingToRename?.let { recording ->
-        var newName by remember { mutableStateOf(recording.fileName.substringBeforeLast(".")) }
+        var newName by remember { mutableStateOf(getRecordingDisplayTitle(recording)) }
         AlertDialog(
             onDismissRequest = { },
             title = { Text("Rename Recording") },
@@ -288,7 +292,7 @@ private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(bottom = 100.dp),
+            .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -413,7 +417,7 @@ private fun RecordingItem(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = recording.fileName,
+                        text = getRecordingDisplayTitle(recording),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -503,10 +507,4 @@ private fun RecordingItem(
             }
         }
     }
-}
-
-private fun formatDuration(durationMs: Long): String {
-    val minutes = (durationMs / 1000) / 60
-    val seconds = (durationMs / 1000) % 60
-    return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 }

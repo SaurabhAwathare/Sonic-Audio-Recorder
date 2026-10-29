@@ -45,8 +45,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.saurabh.sonicaudiorecorder.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,19 +69,23 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
-                        "Settings",
+                        stringResource(R.string.settings_title),
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
-                    ) 
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.settings_back_desc)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         }
@@ -94,45 +100,73 @@ fun SettingsScreen(
         ) {
 
             SettingsSection(
-                title = "AUDIO ENGINE",
+                title = stringResource(R.string.settings_section_audio_engine),
                 items = listOf(
-                    SettingItemData("Recording Format", audioFormat, Icons.Default.AudioFile) {
+                    SettingItemData(
+                        title = stringResource(R.string.settings_audio_format_title),
+                        value = audioFormat,
+                        icon = Icons.Default.AudioFile
+                    ) {
                         showFormatDialog = true
                     },
-                    SettingItemData("Storage Location", storageLocation, Icons.Default.Folder) {
+                    SettingItemData(
+                        title = stringResource(R.string.settings_storage_location_title),
+                        value = if (storageLocation == "Internal") {
+                            stringResource(R.string.storage_internal)
+                        } else {
+                            stringResource(R.string.storage_external)
+                        },
+                        icon = Icons.Default.Folder
+                    ) {
                         showStorageDialog = true
                     }
                 )
             )
 
             SettingsSection(
-                title = "APPEARANCE",
+                title = stringResource(R.string.settings_section_appearance),
                 items = listOf(
-                    SettingItemData("Theme", themeMode, Icons.Default.Palette) {
+                    SettingItemData(
+                        title = stringResource(R.string.settings_theme_title),
+                        value = when (themeMode) {
+                            "Light" -> stringResource(R.string.theme_light)
+                            "Dark" -> stringResource(R.string.theme_dark)
+                            else -> stringResource(R.string.theme_system)
+                        },
+                        icon = Icons.Default.Palette
+                    ) {
                         showThemeDialog = true
                     }
                 )
             )
 
             SettingsSection(
-                title = "SUPPORT",
+                title = stringResource(R.string.settings_section_support),
                 items = listOf(
-                    SettingItemData("Privacy Policy", "", Icons.Default.PrivacyTip) {
+                    SettingItemData(
+                        title = stringResource(R.string.settings_privacy_policy_title),
+                        value = "",
+                        icon = Icons.Default.PrivacyTip
+                    ) {
                         showPrivacyDialog = true
                     },
-                    SettingItemData("About Sonic", "v1.0.0", Icons.Default.Info) {
+                    SettingItemData(
+                        title = stringResource(R.string.settings_about_title),
+                        value = stringResource(R.string.settings_about_version),
+                        icon = Icons.Default.Info
+                    ) {
                         showAboutDialog = true
                     }
                 )
             )
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Sonic Audio Recorder",
+                    text = stringResource(R.string.app_name),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
         }
@@ -140,12 +174,16 @@ fun SettingsScreen(
         // Dialogs
         if (showFormatDialog) {
             SelectionDialog(
-                title = "Select Format",
-                options = listOf("WAV", "MP3"),
+                title = stringResource(R.string.settings_dialog_select_format),
+                options = listOf("WAV", "M4A"),
+                optionLabels = listOf(
+                    stringResource(R.string.format_wav_label),
+                    stringResource(R.string.format_m4a_label)
+                ),
                 selectedOption = audioFormat,
-                onOptionSelected = { 
+                onOptionSelected = {
                     viewModel.updateAudioFormat(it)
-                    showFormatDialog = false 
+                    showFormatDialog = false
                 },
                 onDismiss = { showFormatDialog = false }
             )
@@ -153,12 +191,17 @@ fun SettingsScreen(
 
         if (showThemeDialog) {
             SelectionDialog(
-                title = "Theme",
+                title = stringResource(R.string.settings_dialog_theme),
                 options = listOf("Light", "Dark", "System Default"),
+                optionLabels = listOf(
+                    stringResource(R.string.theme_light),
+                    stringResource(R.string.theme_dark),
+                    stringResource(R.string.theme_system)
+                ),
                 selectedOption = themeMode,
-                onOptionSelected = { 
+                onOptionSelected = {
                     viewModel.updateThemeMode(it)
-                    showThemeDialog = false 
+                    showThemeDialog = false
                 },
                 onDismiss = { showThemeDialog = false }
             )
@@ -166,13 +209,16 @@ fun SettingsScreen(
 
         if (showStorageDialog) {
             SelectionDialog(
-                title = "Storage Location",
+                title = stringResource(R.string.settings_dialog_storage_location),
                 options = listOf("Internal", "External"),
-                optionLabels = listOf("Internal Storage (Private)", "External Storage (App Folder)"),
+                optionLabels = listOf(
+                    "${stringResource(R.string.storage_internal_label)}\n${viewModel.internalStoragePath}",
+                    "${stringResource(R.string.storage_external_label)}\n${viewModel.externalStoragePath}"
+                ),
                 selectedOption = storageLocation,
-                onOptionSelected = { 
+                onOptionSelected = {
                     viewModel.updateStorageLocation(it)
-                    showStorageDialog = false 
+                    showStorageDialog = false
                 },
                 onDismiss = { showStorageDialog = false }
             )
@@ -182,18 +228,33 @@ fun SettingsScreen(
             AlertDialog(
                 onDismissRequest = { showAboutDialog = false },
                 confirmButton = {
-                    TextButton(onClick = { showAboutDialog = false }) { Text("Close") }
-                },
-                title = { Text("About Sonic") },
-                text = {
-                    Column {
-                        Text("Sonic Audio Recorder", style = MaterialTheme.typography.titleMedium)
-                        Text("Version 1.0.0", style = MaterialTheme.typography.bodySmall)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("A premium, modern audio recording experience built with Jetpack Compose.")
+                    TextButton(onClick = { showAboutDialog = false }) {
+                        Text(stringResource(R.string.settings_dialog_close))
                     }
                 },
-                shape = RoundedCornerShape(28.dp)
+                title = { Text(stringResource(R.string.settings_about_title)) },
+                text = {
+                    Column {
+                        Text(
+                            text = stringResource(R.string.settings_about_subtitle),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_about_version),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.settings_about_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             )
         }
 
@@ -201,13 +262,20 @@ fun SettingsScreen(
             AlertDialog(
                 onDismissRequest = { showPrivacyDialog = false },
                 confirmButton = {
-                    TextButton(onClick = { showPrivacyDialog = false }) { Text("I Understand") }
+                    TextButton(onClick = { showPrivacyDialog = false }) {
+                        Text(stringResource(R.string.settings_dialog_understand))
+                    }
                 },
-                title = { Text("Privacy Policy") },
+                title = { Text(stringResource(R.string.settings_privacy_policy_title)) },
                 text = {
-                    Text("Your privacy is important. Sonic Audio Recorder stores all recordings locally on your device. We do not collect, store, or share any of your audio data with third-party servers.")
+                    Text(
+                        text = stringResource(R.string.settings_privacy_policy_text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 },
-                shape = RoundedCornerShape(28.dp)
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             )
         }
     }
@@ -230,14 +298,14 @@ fun SettingsSection(
             text = title,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.primary
             ),
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
         )
 
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
@@ -247,7 +315,7 @@ fun SettingsSection(
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                         )
                     }
                 }
@@ -268,7 +336,7 @@ fun SettingItem(item: SettingItemData) {
         Icon(
             imageVector = item.icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
 
@@ -301,7 +369,6 @@ fun SettingItem(item: SettingItemData) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SelectionDialog(
     title: String,
@@ -314,9 +381,17 @@ fun SelectionDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_dialog_cancel))
+            }
         },
-        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 options.forEachIndexed { index, option ->
@@ -332,7 +407,22 @@ fun SelectionDialog(
                             onClick = { onOptionSelected(option) }
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(optionLabels[index], style = MaterialTheme.typography.bodyLarge)
+                        Column {
+                            val rawLabel = optionLabels[index]
+                            val lines = rawLabel.split("\n")
+                            Text(
+                                text = lines[0],
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (lines.size > 1) {
+                                Text(
+                                    text = lines[1],
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }

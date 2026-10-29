@@ -1,4 +1,69 @@
 <resources>
     <string name="app_name">Sonic Audio Recorder</string>
     <string name="playback_channel_name">Audio Playback</string>
+
+    <!-- Settings UI Strings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_back_desc">Navigate back</string>
+
+    <string name="settings_section_audio_engine">AUDIO ENGINE</string>
+    <string name="settings_section_appearance">APPEARANCE</string>
+    <string name="settings_section_support">SUPPORT</string>
+
+    <string name="settings_audio_format_title">Recording Format</string>
+    <string name="settings_storage_location_title">Storage Location</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="settings_privacy_policy_title">Privacy Policy</string>
+    <string name="settings_about_title">About Sonic</string>
+
+    <string name="settings_about_version">v1.0.0</string>
+    <string name="settings_about_subtitle">Sonic Audio Recorder</string>
+    <string name="settings_about_description">A premium, modern audio recording experience built with Jetpack Compose.</string>
+    <string name="settings_privacy_policy_text">Your privacy is important. Sonic Audio Recorder stores all recordings locally on your device. We do not collect, store, or share any of your audio data with third-party servers.</string>
+
+    <string name="settings_dialog_cancel">Cancel</string>
+    <string name="settings_dialog_close">Close</string>
+    <string name="settings_dialog_understand">I Understand</string>
+    <string name="settings_dialog_select_format">Select Format</string>
+    <string name="settings_dialog_theme">Theme</string>
+    <string name="settings_dialog_storage_location">Storage Location</string>
+
+    <string name="format_wav">WAV</string>
+    <string name="format_wav_label">WAV (Uncompressed, High Quality)</string>
+    <string name="format_m4a">M4A</string>
+    <string name="format_m4a_label">M4A (AAC, Compressed)</string>
+
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">System Default</string>
+
+    <string name="storage_internal">Internal</string>
+    <string name="storage_internal_label">Internal Storage</string>
+    <string name="storage_external">External</string>
+    <string name="storage_external_label">External Storage</string>
+
+    <!-- Home Screen UI Strings -->
+    <string name="home_header_title">Sonic</string>
+    <string name="record_button_label">Tap to Record</string>
+    <string name="record_button_cd">Start recording audio</string>
+
+    <!-- Active Recording UI Strings -->
+    <string name="recording_status_recording">RECORDING</string>
+    <string name="recording_status_paused">PAUSED</string>
+    <string name="recording_status_finalizing">SAVING…</string>
+    <string name="recording_control_pause">Pause</string>
+    <string name="recording_control_resume">Resume</string>
+    <string name="recording_control_stop">Save</string>
+    <string name="recording_format_wav_badge">WAV</string>
+    <string name="recording_format_m4a_badge">M4A (AAC)</string>
+    <string name="recording_close_desc">Close recording</string>
+
+    <!-- Post-Recording Review Sheet Strings -->
+    <string name="post_recording_title">Recording Saved</string>
+    <string name="post_recording_share">Share</string>
+    <string name="post_recording_rename">Rename</string>
+    <string name="post_recording_delete">Delete</string>
+    <string name="post_recording_done">Done</string>
+    <string name="post_recording_play_preview">Play preview</string>
+    <string name="post_recording_pause_preview">Pause preview</string>
 </resources>

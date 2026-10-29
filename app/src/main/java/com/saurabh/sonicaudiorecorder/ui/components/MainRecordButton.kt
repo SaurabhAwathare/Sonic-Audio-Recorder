@@ -18,14 +18,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.saurabh.sonicaudiorecorder.R
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
 
 @Composable
 fun MainRecordButton(
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    label: String = stringResource(R.string.record_button_label),
+    labelAlpha: Float = 1f,
 ) {
     val haptic = LocalHapticFeedback.current
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -39,45 +50,72 @@ fun MainRecordButton(
         label = "scale"
     )
 
-    Box(
+    val buttonDescription = stringResource(R.string.record_button_cd)
+
+    Column(
         modifier = modifier
-            .size(110.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .shadow(
-                elevation = 12.dp,
-                shape = CircleShape,
-                ambientColor = SonicPurple.copy(alpha = 0.5f),
-                spotColor = SonicPurple
-            )
-            .clip(CircleShape)
-            .background(SonicGradient)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(bounded = true, color = Color.White.copy(alpha = 0.3f)),
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onClick()
-                }
-            ),
-        contentAlignment = Alignment.Center
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = "$label. $buttonDescription"
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Inner circle glass effect
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp)
+                .size(110.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .shadow(
+                    elevation = 12.dp,
+                    shape = CircleShape,
+                    ambientColor = SonicPurple.copy(alpha = 0.5f),
+                    spotColor = SonicPurple
+                )
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.15f))
-        )
-        
-        Icon(
-            imageVector = Icons.Default.Mic,
-            contentDescription = "Start Recording",
-            tint = Color.White,
-            modifier = Modifier.size(44.dp)
-        )
+                .background(SonicGradient)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = ripple(bounded = true, color = Color.White.copy(alpha = 0.3f))
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // Inner circle glass effect
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.15f))
+            )
+            
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(44.dp)
+            )
+        }
+
+        if (labelAlpha > 0.01f) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = labelAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .graphicsLayer { alpha = labelAlpha }
+                    .padding(horizontal = 8.dp)
+            )
+        }
     }
 }

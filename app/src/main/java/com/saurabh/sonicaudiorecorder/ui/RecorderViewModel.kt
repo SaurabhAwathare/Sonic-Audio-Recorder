@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -56,6 +57,28 @@ class RecorderViewModel @Inject constructor(
         .map { it == RecordingStatus.PAUSED }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val recordingStatus: StateFlow<RecordingStatus> = stateManager.state
+
+    private val _activeSessionFormat = MutableStateFlow<String?>(null)
+
+    private var isStartingRecording = false
+
+    private val _lastRecording = MutableStateFlow<RecordingEntity?>(null)
+    val lastRecording: StateFlow<RecordingEntity?> = _lastRecording
+
+    val audioFormat: StateFlow<String> = combine(
+        settingsRepository.audioFormat.catch { emit("WAV") },
+        _activeSessionFormat,
+        recordingStatus,
+        _lastRecording
+    ) { defaultFormat, sessionFormat, status, lastRec ->
+        when {
+            status != RecordingStatus.IDLE -> sessionFormat ?: defaultFormat
+            lastRec != null -> sessionFormat ?: if (lastRec.fileName.endsWith(".m4a", ignoreCase = true)) "M4A" else "WAV"
+            else -> defaultFormat
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "WAV")
+
     val elapsedTime: StateFlow<Long> = stateManager.elapsedTime
 
     private val _recordings = recordingDao.getAllRecordings()
@@ -67,9 +90,6 @@ class RecorderViewModel @Inject constructor(
             viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
         )
     val recordings: StateFlow<List<RecordingEntity>> = _recordings
-
-    private val _lastRecording = MutableStateFlow<RecordingEntity?>(null)
-    val lastRecording: StateFlow<RecordingEntity?> = _lastRecording
 
     val isPlaying = audioPlayer.isPlaying
     val currentPlayingPath = audioPlayer.currentPlayingPath
@@ -108,6 +128,14 @@ class RecorderViewModel @Inject constructor(
                 }
             }
         }
+
+        viewModelScope.launch {
+            combine(stateManager.state, _lastRecording) { status, lastRec ->
+                if (status == RecordingStatus.IDLE && lastRec == null) {
+                    _activeSessionFormat.value = null
+                }
+            }.collect()
+        }
     }
 
     private fun updateHistory(newAmplitude: Float) {
@@ -126,39 +154,60 @@ class RecorderViewModel @Inject constructor(
     }
 
     fun startRecording() {
-        if (isRecording.value) return
+        if (isRecording.value || isStartingRecording) return
+        isStartingRecording = true
+
+        audioPlayer.stopPlayback()
+
         _lastRecording.value = null
         stateManager.clearLastCompletedRecording()
         _amplitudeHistory.value = List(80) { 0f }
 
         viewModelScope.launch {
-            val format = settingsRepository.audioFormat.first()
-            val location = settingsRepository.storageLocation.first()
-            val directory = if (location == "External") {
-                context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-            } else {
-                context.filesDir
-            }
-
-            if (directory == null) {
-                Log.e(TAG, "Storage directory is null")
-                return@launch
-            }
-
-            val extension = if (format == "WAV") "wav" else "m4a"
-            val fileName = "REC_${System.currentTimeMillis()}.$extension"
-            val file = File(directory, fileName)
-
             try {
+                val format = try {
+                    settingsRepository.audioFormat.first()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reading audio format setting", e)
+                    "WAV"
+                }
+                _activeSessionFormat.value = format
+
+                val location = try {
+                    settingsRepository.storageLocation.first()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reading storage location setting", e)
+                    "Internal"
+                }
+
+                val directory = if (location == "External") {
+                    context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                } else {
+                    context.filesDir
+                }
+
+                if (directory == null) {
+                    Log.e(TAG, "Storage directory is null")
+                    _activeSessionFormat.value = null
+                    return@launch
+                }
+
+                val extension = if (format == "WAV") "wav" else "m4a"
+                val fileName = "REC_${System.currentTimeMillis()}.$extension"
+                val file = File(directory, fileName)
+
                 val serviceIntent = Intent(context, RecordingService::class.java).apply {
                     action = RecordingService.ACTION_START
                     putExtra(RecordingService.EXTRA_FILE_PATH, file.absolutePath)
                     putExtra(RecordingService.EXTRA_FORMAT, format)
                 }
                 ContextCompat.startForegroundService(context, serviceIntent)
-                
+
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start recording service", e)
+                _activeSessionFormat.value = null
+            } finally {
+                isStartingRecording = false
             }
         }
     }
@@ -195,7 +244,11 @@ class RecorderViewModel @Inject constructor(
     }
 
     fun resetLastRecording() {
+        audioPlayer.stopPlayback()
         _lastRecording.value = null
+        if (recordingStatus.value == RecordingStatus.IDLE) {
+            _activeSessionFormat.value = null
+        }
     }
 
     fun togglePlayback(recording: RecordingEntity) {

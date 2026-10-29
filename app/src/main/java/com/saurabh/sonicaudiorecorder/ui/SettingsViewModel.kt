@@ -27,6 +27,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope, SharingStarted.WhileSubscribed(5000), "Internal"
     )
 
+    val internalStoragePath: String
+        get() = repository.getInternalStoragePath()
+
+    val externalStoragePath: String
+        get() = repository.getExternalStoragePath()
+
     fun updateAudioFormat(format: String) {
         viewModelScope.launch { repository.updateAudioFormat(format) }
     }

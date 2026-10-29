@@ -1,6 +1,7 @@
 package com.saurabh.sonicaudiorecorder.data
 
 import android.content.Context
+import android.os.Environment
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,8 +24,13 @@ class SettingsRepository @Inject constructor(
         val AUTO_SILENT_MODE = booleanPreferencesKey("auto_silent_mode")
     }
 
+    /**
+     * Exposes the configured audio format ("WAV" or "M4A").
+     * Legacy "MP3" values stored in preferences automatically resolve to "M4A".
+     */
     val audioFormat: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[PreferencesKeys.AUDIO_FORMAT] ?: "WAV"
+        val savedFormat = preferences[PreferencesKeys.AUDIO_FORMAT] ?: "WAV"
+        if (savedFormat == "MP3") "M4A" else savedFormat
     }
 
     val themeMode: Flow<String> = context.dataStore.data.map { preferences ->
@@ -40,8 +46,9 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun updateAudioFormat(format: String) {
+        val resolvedFormat = if (format == "MP3") "M4A" else format
         context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.AUDIO_FORMAT] = format
+            preferences[PreferencesKeys.AUDIO_FORMAT] = resolvedFormat
         }
     }
 
@@ -57,4 +64,12 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    fun getInternalStoragePath(): String {
+        return context.filesDir.absolutePath
+    }
+
+    fun getExternalStoragePath(): String {
+        return context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.absolutePath
+            ?: context.filesDir.absolutePath
+    }
 }
