@@ -1,8 +1,3 @@
-@file:Suppress(
-    "KotlinConstantConditions",
-    "KotlinConstantConditions", "KotlinConstantConditions", "KotlinConstantConditions"
-)
-
 package com.saurabh.sonicaudiorecorder.data
 
 import android.annotation.SuppressLint
@@ -16,10 +11,10 @@ import android.os.Build
 import android.os.StatFs
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -41,17 +36,21 @@ class AudioRecorder @Inject constructor(
     private var mediaRecorder: MediaRecorder? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
-    
+
     private var noiseSuppressor: NoiseSuppressor? = null
     private var automaticGainControl: AutomaticGainControl? = null
-    
+
     @Volatile
     private var isRecording = false
+    @Volatile
     private var isPaused = false
-    
+
+    @Volatile
+    private var recordingException: Throwable? = null
+
     private var lastAmplitude = 0f
     private var currentOutputFile: File? = null
-    
+
     private val recordingMutex = Mutex()
 
     // High Quality Configuration
@@ -70,32 +69,29 @@ class AudioRecorder @Inject constructor(
         this.errorListener = listener
     }
 
-    fun start(outputFile: File, format: String = "WAV") {
-        CoroutineScope(Dispatchers.IO).launch {
-            recordingMutex.withLock {
-                if (isRecording) {
-                    Log.w(TAG, "Recording already in progress")
-                    return@withLock
-                }
-                
-                // Pre-flight check: Disk space
-                if (!hasEnoughSpace(outputFile.parentFile ?: context.filesDir)) {
-                    Log.e(TAG, "Insufficient storage to start recording")
-                    errorListener?.onError("Insufficient storage space")
-                    return@withLock
-                }
+    suspend fun start(outputFile: File, format: String = "WAV"): Boolean = recordingMutex.withLock {
+        if (isRecording) {
+            Log.w(TAG, "Recording already in progress")
+            return false
+        }
 
-                Log.i(TAG, "Starting recording: ${outputFile.absolutePath}, format: $format")
-                isRecording = true
-                isPaused = false
-                currentOutputFile = outputFile
-                
-                if (format == "WAV") {
-                    startWavRecording(outputFile)
-                } else {
-                    startAacRecording(outputFile)
-                }
-            }
+        // Pre-flight check: Disk space
+        if (!hasEnoughSpace(outputFile.parentFile ?: context.filesDir)) {
+            Log.e(TAG, "Insufficient storage to start recording")
+            errorListener?.onError("Insufficient storage space")
+            return false
+        }
+
+        Log.i(TAG, "Starting recording: ${outputFile.absolutePath}, format: $format")
+        isRecording = true
+        isPaused = false
+        recordingException = null
+        currentOutputFile = outputFile
+
+        return if (format == "WAV") {
+            startWavRecording(outputFile)
+        } else {
+            startAacRecording(outputFile)
         }
     }
 
@@ -106,188 +102,249 @@ class AudioRecorder @Inject constructor(
             availableBytes > (requiredMb * 1024 * 1024)
         } catch (e: Exception) {
             Log.e(TAG, "Error checking storage space", e)
-            true // Default to true if check fails, catch errors during write
+            true
         }
     }
 
-    private fun startAacRecording(outputFile: File) {
-        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(context)
-        } else {
-            @Suppress("DEPRECATION")
-            MediaRecorder()
-        }).apply {
-            setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION) // Optimized for clarity
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioSamplingRate(sampleRate)
-            setAudioEncodingBitRate(192000) // High bit rate for AAC
-            setOutputFile(outputFile.absolutePath)
-            
-            // Set error listener for MediaRecorder
-            setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaRecorder error: $what, extra: $extra")
-                errorListener?.onError("Recording error: $what")
-                stop()
-            }
+    private fun startAacRecording(outputFile: File): Boolean {
+        return try {
+            mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }).apply {
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(sampleRate)
+                setAudioEncodingBitRate(192000)
+                setOutputFile(outputFile.absolutePath)
 
-            try {
+                setOnErrorListener { _, what, extra ->
+                    Log.e(TAG, "MediaRecorder error: $what, extra: $extra")
+                    errorListener?.onError("Recording error: $what")
+                    recordingException = IOException("MediaRecorder error: $what, extra: $extra")
+                    isRecording = false
+                }
+
                 prepare()
                 start()
                 Log.d(TAG, "AAC Recording started successfully")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start AAC recording", e)
-                errorListener?.onError("Failed to start recording: ${e.message}")
-                isRecording = false
             }
+            true
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "Failed to start AAC recording", e)
+            errorListener?.onError("Failed to start recording: ${e.message}")
+            isRecording = false
+            false
         }
     }
 
     @Suppress("ReplaceJavaStaticMethodWithKotlinAnalog")
     @SuppressLint("MissingPermission")
-    private fun startWavRecording(outputFile: File) {
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION, // Best for clean, processed voice
-            sampleRate,
-            channelConfig,
-            audioFormat,
-            bufferSize
-        )
+    private fun startWavRecording(outputFile: File): Boolean {
+        return try {
+            audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
 
-        // Enable Hardware Effects if available
-        if (NoiseSuppressor.isAvailable()) {
-            noiseSuppressor = NoiseSuppressor.create(audioRecord!!.audioSessionId)
-            noiseSuppressor?.enabled = true
-            Log.d(TAG, "NoiseSuppressor enabled")
-        }
-        if (AutomaticGainControl.isAvailable()) {
-            automaticGainControl = AutomaticGainControl.create(audioRecord!!.audioSessionId)
-            automaticGainControl?.enabled = true
-            Log.d(TAG, "AutomaticGainControl enabled")
-        }
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(audioRecord!!.audioSessionId)
+                noiseSuppressor?.enabled = true
+                Log.d(TAG, "NoiseSuppressor enabled")
+            }
+            if (AutomaticGainControl.isAvailable()) {
+                automaticGainControl = AutomaticGainControl.create(audioRecord!!.audioSessionId)
+                automaticGainControl?.enabled = true
+                Log.d(TAG, "AutomaticGainControl enabled")
+            }
 
-        recordingJob = CoroutineScope(Dispatchers.IO).launch {
-            val data = ByteArray(bufferSize)
-            var totalBytesWritten = 0L
-            var raf: RandomAccessFile? = null
-            
-            try {
-                if (outputFile.exists()) {
-                    outputFile.delete()
-                }
-                outputFile.createNewFile()
-                
-                // Use RandomAccessFile to allow periodic header updates
-                raf = RandomAccessFile(outputFile, "rw")
-                writeWavHeader(raf) // Initial header with 0 length
-                
-                audioRecord?.startRecording()
-                if (audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                    throw IOException("AudioRecord failed to start")
-                }
-                
-                Log.d(TAG, "WAV Recording started")
-                
-                var lastHeaderUpdate = 0L
-                
-                while (isRecording && isActive) {
-                    if (isPaused) {
-                        lastAmplitude = 0f
-                        delay(100)
-                        continue
+            recordingJob = CoroutineScope(Dispatchers.IO).launch {
+                val data = ByteArray(bufferSize)
+                var totalBytesWritten = 0L
+                var raf: RandomAccessFile? = null
+
+                try {
+                    if (outputFile.exists()) {
+                        outputFile.delete()
                     }
-                    
-                    val read = audioRecord?.read(data, 0, bufferSize) ?: 0
-                    if (read > 0) {
-                        try {
-                            raf.write(data, 0, read)
-                            totalBytesWritten += read
-                            
-                            // Periodic Header Update (every 2 seconds or ~200KB)
-                            // This ensures that if the app crashes, the file header is mostly correct
-                            if (totalBytesWritten - lastHeaderUpdate > 200000) {
-                                updateWavHeader(raf, totalBytesWritten)
-                                lastHeaderUpdate = totalBytesWritten
+                    outputFile.createNewFile()
+
+                    raf = RandomAccessFile(outputFile, "rw")
+                    writeWavHeader(raf)
+
+                    audioRecord?.startRecording()
+                    if (audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                        throw IOException("AudioRecord failed to start")
+                    }
+
+                    Log.d(TAG, "WAV Recording started")
+                    var lastHeaderUpdate = 0L
+
+                    while (isRecording && isActive) {
+                        val read = audioRecord?.read(data, 0, bufferSize) ?: 0
+                        if (read > 0) {
+                            if (isPaused) {
+                                lastAmplitude = 0f
+                                continue
                             }
-                            
-                        } catch (e: IOException) {
-                            if (e.message?.contains("ENOSPC") == true) {
-                                Log.e(TAG, "Storage full during recording!", e)
-                                errorListener?.onError("Storage full. Recording saved.")
-                            } else {
+
+                            try {
+                                raf.write(data, 0, read)
+                                totalBytesWritten += read
+
+                                if (totalBytesWritten - lastHeaderUpdate > 200000) {
+                                    updateWavHeader(raf, totalBytesWritten)
+                                    lastHeaderUpdate = totalBytesWritten
+                                }
+                            } catch (e: IOException) {
                                 Log.e(TAG, "I/O error during recording", e)
                                 errorListener?.onError("I/O error: ${e.message}")
+                                recordingException = e
+                                isRecording = false
+                                break
                             }
-                            isRecording = false
+
+                            var sum = 0.0
+                            for (i in 0 until read step 2) {
+                                val sample = ((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xFF)).toShort().toDouble()
+                                sum += sample * sample
+                            }
+                            lastAmplitude = Math.sqrt(sum / (read / 2)).toFloat()
+                        } else if (read < 0) {
+                            if (isRecording && isActive) {
+                                Log.e(TAG, "AudioRecord read error during active recording: $read")
+                                errorListener?.onError("Hardware recording error")
+                                recordingException = IOException("AudioRecord read error: $read")
+                            } else {
+                                Log.d(TAG, "AudioRecord read returned $read during intentional stop or cancellation")
+                            }
                             break
                         }
-                        
-                        // Amplitude calc
-                        var sum = 0.0
-                        for (i in 0 until read step 2) {
-                            val sample = ((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xFF)).toShort().toDouble()
-                            sum += sample * sample
-                        }
-                        lastAmplitude = Math.sqrt(sum / (read / 2)).toFloat()
-                    } else if (read < 0) {
-                        Log.e(TAG, "AudioRecord read error: $read")
-                        errorListener?.onError("Hardware recording error")
-                        break
                     }
+
+                    if (raf != null && totalBytesWritten > 0) {
+                        updateWavHeader(raf, totalBytesWritten)
+                    }
+                    Log.d(TAG, "WAV Recording finished. Total bytes: $totalBytesWritten")
+
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.e(TAG, "WAV recording loop failed", e)
+                    recordingException = e
+                    errorListener?.onError("Recording failed: ${e.message}")
+                } finally {
+                    try {
+                        raf?.close()
+                    } catch (e: IOException) {
+                        Log.e(TAG, "Failed to close RandomAccessFile", e)
+                        if (recordingException == null) {
+                            recordingException = e
+                        }
+                    }
+                    cleanupEffects()
                 }
-                
-                // Final header update
-                updateWavHeader(raf, totalBytesWritten)
-                Log.d(TAG, "WAV Recording finished and header finalized. Total bytes: $totalBytesWritten")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "WAV recording failed", e)
-                errorListener?.onError("Recording failed: ${e.message}")
-            } finally {
-                try {
-                    raf?.close()
-                } catch (e: IOException) {
-                    Log.e(TAG, "Failed to close RandomAccessFile", e)
-                }
-                cleanupEffects()
-                if (isRecording) stop() // Ensure state consistency if loop exited prematurely
             }
+            true
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "Failed to initialize WAV recording", e)
+            errorListener?.onError("Failed to start recording: ${e.message}")
+            isRecording = false
+            false
         }
     }
 
     private fun cleanupEffects() {
-        noiseSuppressor?.release()
+        try {
+            noiseSuppressor?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing NoiseSuppressor", e)
+        }
         noiseSuppressor = null
-        automaticGainControl?.release()
+        try {
+            automaticGainControl?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing AutomaticGainControl", e)
+        }
         automaticGainControl = null
     }
 
-    fun stop() {
-        CoroutineScope(Dispatchers.IO).launch {
-            recordingMutex.withLock {
-                if (!isRecording) return@withLock
-                Log.i(TAG, "Stopping recording")
-                isRecording = false
-                isPaused = false
-                recordingJob?.cancel()
-                
-                mediaRecorder?.apply {
-                    try { stop() } catch(e: Exception) { Log.e(TAG, "MediaRecorder stop failed", e) }
-                    release()
-                }
-                mediaRecorder = null
+    suspend fun stop(): Result<File?> = recordingMutex.withLock {
+        if (!isRecording && recordingJob == null && mediaRecorder == null) {
+            return Result.success(currentOutputFile)
+        }
+        Log.i(TAG, "Stopping recording")
+        isRecording = false
+        isPaused = false
 
-                audioRecord?.apply {
-                    try { stop() } catch(e: Exception) { Log.e(TAG, "AudioRecord stop failed", e) }
-                    release()
-                }
-                audioRecord = null
-                
-                currentOutputFile?.let {
-                    Log.i(TAG, "File saved: ${it.absolutePath}, size: ${it.length()} bytes")
-                }
-                currentOutputFile = null
+        var stopException: Throwable? = null
+
+        mediaRecorder?.apply {
+            try {
+                stop()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "MediaRecorder stop failed", e)
+                stopException = e
             }
+            try {
+                release()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "MediaRecorder release failed", e)
+            }
+        }
+        mediaRecorder = null
+
+        audioRecord?.apply {
+            try {
+                stop()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "AudioRecord stop failed", e)
+                if (stopException == null) stopException = e
+            }
+        }
+
+        // Deterministic join without timeout
+        try {
+            recordingJob?.join()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "Error joining recordingJob", e)
+            if (stopException == null) stopException = e
+        }
+        recordingJob = null
+
+        audioRecord?.apply {
+            try {
+                release()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "AudioRecord release failed", e)
+            }
+        }
+        audioRecord = null
+
+        val outputFile = currentOutputFile
+        currentOutputFile = null
+
+        val finalError = recordingException ?: stopException
+
+        return if (finalError == null && outputFile != null && outputFile.exists() && outputFile.length() > 44) {
+            Log.i(TAG, "File successfully finalized: ${outputFile.absolutePath}, size: ${outputFile.length()} bytes")
+            Result.success(outputFile)
+        } else {
+            val errorMsg = finalError?.message ?: "Recording output file invalid or corrupt"
+            Log.e(TAG, "Recording finalization failed: $errorMsg")
+            Result.failure(finalError ?: IOException("File missing or invalid WAV size: ${outputFile?.length()}"))
         }
     }
 
@@ -311,6 +368,7 @@ class AudioRecorder @Inject constructor(
         try {
             mediaRecorder?.pause()
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "MediaRecorder pause failed", e)
         }
     }
@@ -322,6 +380,7 @@ class AudioRecorder @Inject constructor(
         try {
             mediaRecorder?.resume()
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "MediaRecorder resume failed", e)
         }
     }
@@ -352,27 +411,21 @@ class AudioRecorder @Inject constructor(
         header[34] = bitRate.toByte(); header[35] = 0 
         header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
         header[40] = 0; header[41] = 0; header[42] = 0; header[43] = 0
-        
+
         raf.seek(0)
         raf.write(header)
     }
 
     private fun updateWavHeader(raf: RandomAccessFile, audioDataLen: Long) {
-        try {
-            val totalDataLen = audioDataLen + 36
-            
-            val currentPos = raf.filePointer
-            
-            raf.seek(4)
-            raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(totalDataLen.toInt()).array())
-            
-            raf.seek(40)
-            raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(audioDataLen.toInt()).array())
-            
-            raf.seek(currentPos)
-        } catch (e: IOException) {
-            Log.e(TAG, "Failed to update WAV header", e)
-        }
-    }
+        val totalDataLen = audioDataLen + 36
+        val currentPos = raf.filePointer
 
+        raf.seek(4)
+        raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(totalDataLen.toInt()).array())
+
+        raf.seek(40)
+        raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(audioDataLen.toInt()).array())
+
+        raf.seek(currentPos)
+    }
 }

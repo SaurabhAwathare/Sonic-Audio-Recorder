@@ -1,5 +1,6 @@
 package com.saurabh.sonicaudiorecorder.data
 
+import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -7,7 +8,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class RecordingStatus {
-    IDLE, RECORDING, PAUSED
+    IDLE, RECORDING, PAUSED, FINALIZING
 }
 
 @Singleton
@@ -21,6 +22,9 @@ class RecordingStateManager @Inject constructor() {
     private val _amplitude = MutableStateFlow(0f)
     val amplitude: StateFlow<Float> = _amplitude.asStateFlow()
 
+    private val _lastCompletedRecording = MutableStateFlow<RecordingEntity?>(null)
+    val lastCompletedRecording: StateFlow<RecordingEntity?> = _lastCompletedRecording.asStateFlow()
+
     fun updateState(newState: RecordingStatus) {
         _state.value = newState
     }
@@ -33,9 +37,22 @@ class RecordingStateManager @Inject constructor() {
         _amplitude.value = amplitude
     }
 
+    fun notifyRecordingCompleted(recording: RecordingEntity) {
+        _lastCompletedRecording.value = recording
+    }
+
+    fun notifyRecordingFailed(error: String) {
+        _lastCompletedRecording.value = null
+    }
+
+    fun clearLastCompletedRecording() {
+        _lastCompletedRecording.value = null
+    }
+
     fun reset() {
         _state.value = RecordingStatus.IDLE
         _elapsedTime.value = 0L
         _amplitude.value = 0f
+        _lastCompletedRecording.value = null
     }
 }

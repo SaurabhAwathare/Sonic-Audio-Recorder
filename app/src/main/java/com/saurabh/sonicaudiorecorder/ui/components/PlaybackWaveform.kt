@@ -12,13 +12,15 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import com.saurabh.sonicaudiorecorder.data.waveform.M4aWaveformExtractor
+import com.saurabh.sonicaudiorecorder.data.waveform.WavWaveformExtractor
+import com.saurabh.sonicaudiorecorder.data.waveform.WaveformRepository
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicGradient
 import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.RandomAccessFile
-import kotlin.math.abs
+
+private val fallbackRepository by lazy {
+    WaveformRepository(WavWaveformExtractor(), M4aWaveformExtractor())
+}
 
 @Composable
 fun PlaybackWaveform(
@@ -26,15 +28,15 @@ fun PlaybackWaveform(
     playbackPosition: Long,
     playbackDuration: Long,
     onSeek: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    waveformRepository: WaveformRepository? = null
 ) {
-    // Asynchronously extract amplitude data to keep UI thread smooth
+    // Asynchronously extract amplitude data via WaveformRepository
     var amplitudes by remember(filePath) { mutableStateOf(emptyList<Float>()) }
     
-    LaunchedEffect(filePath) {
-        amplitudes = withContext(Dispatchers.IO) {
-            extractAmplitudes(filePath)
-        }
+    LaunchedEffect(filePath, waveformRepository) {
+        val repo = waveformRepository ?: fallbackRepository
+        amplitudes = repo.getWaveform(filePath)
     }
     
     val progress = if (playbackDuration > 0) playbackPosition.toFloat() / playbackDuration else 0f
@@ -78,7 +80,7 @@ fun PlaybackWaveform(
         val path = Path()
         val step = width / (amplitudes.size - 1)
         
-        // Build the waveform path (symmetrical)
+        // Build the symmetrical waveform path
         for (i in amplitudes.indices) {
             val x = i * step
             val amp = amplitudes[i].coerceIn(0.01f, 1f)
@@ -126,53 +128,5 @@ fun PlaybackWaveform(
                 cap = StrokeCap.Round
             )
         }
-    }
-}
-
-/**
- * Real Audio Extraction Logic:
- * Parses a WAV file, extracts PCM 16-bit samples, and downsamples them
- * into a lightweight amplitude array for visualization.
- */
-private fun extractAmplitudes(filePath: String, points: Int = 160): List<Float> {
-    val file = File(filePath)
-    if (!file.exists() || !filePath.endsWith(".wav")) return emptyList()
-
-    return try {
-        RandomAccessFile(file, "r").use { raf ->
-            val dataSize = file.length() - 44 // Standard WAV Header size
-            if (dataSize <= 0) return emptyList()
-
-            val totalSamples = (dataSize / 2).toInt() // 16-bit = 2 bytes per sample
-            val samplesPerPoint = totalSamples / points
-            
-            if (samplesPerPoint <= 0) return emptyList()
-
-            val amplitudes = mutableListOf<Float>()
-            val buffer = ByteArray(samplesPerPoint * 2)
-            
-            raf.seek(44) // Jump past header to PCM data
-
-            for (i in 0 until points) {
-                val bytesRead = raf.read(buffer)
-                if (bytesRead <= 0) break
-                
-                // Peak-finding downsampling strategy
-                var maxAmplitude = 0
-                for (j in 0 until bytesRead step 2) {
-                    val sample = ((buffer[j + 1].toInt() shl 8) or (buffer[j].toInt() and 0xFF)).toShort()
-                    val absSample = abs(sample.toInt())
-                    if (absSample > maxAmplitude) maxAmplitude = absSample
-                }
-                
-                // Normalize relative to maximum possible 16-bit value
-                val normalized = (maxAmplitude.toFloat() / 32767f).coerceIn(0f, 1f)
-                amplitudes.add(normalized)
-            }
-            amplitudes
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        emptyList()
     }
 }

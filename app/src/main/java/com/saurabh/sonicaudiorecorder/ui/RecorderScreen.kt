@@ -40,6 +40,8 @@ import com.saurabh.sonicaudiorecorder.ui.theme.SonicPurple
 import java.text.SimpleDateFormat
 import java.util.*
 
+import com.saurabh.sonicaudiorecorder.data.waveform.WaveformRepository
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecorderScreen(
@@ -61,6 +63,7 @@ fun RecorderScreen(
         playbackPosition = playbackPosition,
         playbackDuration = playbackDuration,
         amplitudeHistory = amplitudeHistory,
+        waveformRepository = viewModel.waveformRepository,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToRecording = onNavigateToRecording,
         onTogglePlayback = { viewModel.togglePlayback(it) },
@@ -81,6 +84,7 @@ fun RecorderScreenContent(
     playbackPosition: Long,
     playbackDuration: Long,
     amplitudeHistory: List<Float>,
+    waveformRepository: WaveformRepository? = null,
     onNavigateToSettings: () -> Unit,
     onNavigateToRecording: () -> Unit,
     onTogglePlayback: (RecordingEntity) -> Unit,
@@ -147,6 +151,7 @@ fun RecorderScreenContent(
                                 currentPlayingPath = currentPlayingPath,
                                 playbackPosition = playbackPosition,
                                 playbackDuration = playbackDuration,
+                                waveformRepository = waveformRepository,
                                 onTogglePlayback = onTogglePlayback,
                                 onSeek = onSeek,
                                 onDeleteRequest = { recordingToDelete = it },
@@ -316,6 +321,7 @@ private fun RecordingList(
     currentPlayingPath: String?,
     playbackPosition: Long,
     playbackDuration: Long,
+    waveformRepository: WaveformRepository? = null,
     onTogglePlayback: (RecordingEntity) -> Unit,
     onSeek: (Long) -> Unit,
     onDeleteRequest: (RecordingEntity) -> Unit,
@@ -336,6 +342,7 @@ private fun RecordingList(
                 isActive = isThisItemActive,
                 playbackPosition = if (isThisItemActive) playbackPosition else 0L,
                 playbackDuration = if (isThisItemActive) playbackDuration else recording.durationMs,
+                waveformRepository = waveformRepository,
                 onPlayClick = { onTogglePlayback(recording) },
                 onSeek = onSeek,
                 onDelete = { onDeleteRequest(recording) },
@@ -354,6 +361,7 @@ private fun RecordingItem(
     isActive: Boolean,
     playbackPosition: Long,
     playbackDuration: Long,
+    waveformRepository: WaveformRepository? = null,
     onPlayClick: () -> Unit,
     onSeek: (Long) -> Unit,
     onDelete: () -> Unit,
@@ -473,6 +481,7 @@ private fun RecordingItem(
                         playbackPosition = playbackPosition,
                         playbackDuration = playbackDuration,
                         onSeek = onSeek,
+                        waveformRepository = waveformRepository,
                         modifier = Modifier.padding(vertical = 8.dp)
                     )
                     Row(

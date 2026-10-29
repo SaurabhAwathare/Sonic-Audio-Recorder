@@ -3,29 +3,39 @@ package com.saurabh.sonicaudiorecorder.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.saurabh.sonicaudiorecorder.data.AudioPlayer
-import com.saurabh.sonicaudiorecorder.data.SettingsRepository
 import com.example.audiorecorder01.data.local.RecordingDao
-import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
+import com.saurabh.sonicaudiorecorder.data.AudioPlayer
 import com.saurabh.sonicaudiorecorder.data.RecordingStateManager
 import com.saurabh.sonicaudiorecorder.data.RecordingStatus
-import com.saurabh.sonicaudiorecorder.service.PlaybackService
+import com.saurabh.sonicaudiorecorder.data.SettingsRepository
+import com.saurabh.sonicaudiorecorder.data.local.RecordingEntity
 import com.saurabh.sonicaudiorecorder.service.RecordingService
+
+import com.saurabh.sonicaudiorecorder.data.recovery.RecordingRecoveryManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 import kotlin.math.log10
+
+import com.saurabh.sonicaudiorecorder.data.waveform.WaveformRepository
 
 @HiltViewModel
 class RecorderViewModel @Inject constructor(
@@ -33,6 +43,8 @@ class RecorderViewModel @Inject constructor(
     private val audioPlayer: AudioPlayer,
     private val settingsRepository: SettingsRepository,
     private val stateManager: RecordingStateManager,
+    private val recoveryManager: RecordingRecoveryManager,
+    val waveformRepository: WaveformRepository,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -73,6 +85,10 @@ class RecorderViewModel @Inject constructor(
     private val maxRawAmplitude = 32767f 
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            recoveryManager.recoverInterruptedRecordings()
+        }
+
         viewModelScope.launch {
             audioPlayer.pollPosition().collect()
         }
@@ -81,6 +97,15 @@ class RecorderViewModel @Inject constructor(
             stateManager.amplitude.collect { raw ->
                 val processed = processAmplitude(raw)
                 updateHistory(processed)
+            }
+        }
+
+        viewModelScope.launch {
+            stateManager.lastCompletedRecording.collect { recording ->
+                if (recording != null) {
+                    _lastRecording.value = recording
+                    stateManager.clearLastCompletedRecording()
+                }
             }
         }
     }
@@ -103,6 +128,7 @@ class RecorderViewModel @Inject constructor(
     fun startRecording() {
         if (isRecording.value) return
         _lastRecording.value = null
+        stateManager.clearLastCompletedRecording()
         _amplitudeHistory.value = List(80) { 0f }
 
         viewModelScope.launch {
@@ -158,20 +184,13 @@ class RecorderViewModel @Inject constructor(
     fun stopRecording() {
         if (!isRecording.value) return
         
-        viewModelScope.launch {
-            try {
-                val serviceIntent = Intent(context, RecordingService::class.java).apply {
-                    action = RecordingService.ACTION_STOP
-                }
-                context.startService(serviceIntent)
-                
-                delay(500)
-                val latest = recordingDao.getAllRecordings().first().firstOrNull()
-                _lastRecording.value = latest
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Error stopping recording service", e)
+        try {
+            val serviceIntent = Intent(context, RecordingService::class.java).apply {
+                action = RecordingService.ACTION_STOP
             }
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping recording service", e)
         }
     }
 
@@ -183,14 +202,6 @@ class RecorderViewModel @Inject constructor(
         try {
             val file = File(recording.filePath)
             if (file.exists()) {
-                val serviceIntent = Intent(context, PlaybackService::class.java).apply {
-                    putExtra("EXTRA_FILE_PATH", file.absolutePath)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
                 audioPlayer.playOrPause(file)
             } else {
                 Log.e(TAG, "File does not exist: ${recording.filePath}")
@@ -274,11 +285,6 @@ class RecorderViewModel @Inject constructor(
                 Log.e(TAG, "Error deleting recording", e)
             }
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        audioPlayer.release()
     }
 
     companion object {

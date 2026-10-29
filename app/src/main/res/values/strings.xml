@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Sonic Audio Recorder</string>
+    <string name="playback_channel_name">Audio Playback</string>
 </resources>
